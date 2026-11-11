@@ -41,7 +41,31 @@ certificates and no sender checks.
 ## Run it for real
 
 You need a server with a public IP address and ports 25, 80 and 443
-reachable. Many home connections block port 25.
+reachable from the internet. A small VPS is the dependable choice.
+
+### Hosting at home
+
+Codemail only receives mail, so the usual reasons self-hosted mail fails
+at home (blocked outbound port 25, the poor sending reputation of
+residential addresses) do not apply. What matters is whether other mail
+servers can reach you on port 25, and several things can prevent that:
+
+- **Inbound port 25 is blocked.** Some providers block it on residential
+  plans. Some let you turn the block off in your account settings.
+- **You share an IP address (CGNAT).** Many mobile, fixed wireless and
+  fibre plans put several customers behind one public address, so no
+  inbound port works without paying for a public or static IP. Check by
+  comparing your router's WAN address with what a "what is my IP" site
+  shows: if they differ, you are behind CGNAT.
+- **Your address changes.** With a dynamic IP you need dynamic DNS for
+  the server's hostname, and mail sent while the address is changing can
+  be delayed or bounced.
+- **Your plan forbids servers.** Residential terms of service often do,
+  even where nothing technically stops you.
+
+Once the server is running, test from outside your network with an online
+port checker against port 25 before pointing a domain at it. Provider
+policies vary and change, so check your own.
 
 DNS, for a server at `mail.example.com` handling mail for `example.com`:
 
