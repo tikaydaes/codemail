@@ -26,8 +26,9 @@ no AI model.
   code, load remote images or track you. The original stays downloadable.
 - Deletes mail automatically (7 days by default).
 
-A Flutter app for Android, iOS, macOS, Windows and Linux is in `app/`.
-A browser extension is planned; see `DESIGN.md`.
+A Flutter app for Android, iOS, macOS, Windows and Linux is in `app/`,
+and a browser extension for Chromium browsers and Firefox is in
+`extension/`. Neither is published in an app store.
 
 ## Try it locally
 

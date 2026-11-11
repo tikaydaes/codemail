@@ -73,6 +73,7 @@ flutter:
   assets:
     - assets/tray.png
     - assets/tray.ico
+    - assets/icon/rounded.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

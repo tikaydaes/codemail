@@ -1,7 +1,8 @@
 // Derives every icon file from app/assets/icon/source.jpg (the full-bleed
 // master artwork). Run from e2e/:  node make_icons.mjs
-// Then, in app/:  dart run flutter_launcher_icons
+// It also runs flutter_launcher_icons to produce the platform icon sets.
 import { chromium } from 'playwright';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 
 const dir = '../app/assets/icon';
@@ -32,6 +33,12 @@ const render = (size, recipe) => page.evaluate(async ({ size, recipe }) => {
     squircle(0, 0, size); g.clip();
     const s = size * 1.5, o = (size - s) / 2;
     g.drawImage(img, o, o, s, s);
+  } else if (recipe === 'macos-small') {
+    // The macOS shape and margin, with the zoomed artwork of 'small'.
+    const s = size * 0.84, o = (size - s) / 2;
+    squircle(o, o, s); g.clip();
+    const z = s * 1.5;
+    g.drawImage(img, (size - z) / 2, (size - z) / 2, z, z);
   } else if (recipe === 'macos') {
     // macOS icons sit inside a margin with a soft shadow.
     const s = size * 0.805, o = (size - s) / 2;
@@ -82,4 +89,19 @@ head.writeUInt16LE(1, 2); head.writeUInt16LE(1, 4);
 head[6] = 64; head[7] = 64; head.writeUInt16LE(1, 10); head.writeUInt16LE(32, 12);
 head.writeUInt32LE(png.length, 14); head.writeUInt32LE(22, 18);
 fs.writeFileSync('../app/assets/tray.ico', Buffer.concat([head, png]));
+
+// Browser extension icons: the zoomed variant where it is drawn small.
+fs.mkdirSync('../extension/icons', { recursive: true });
+await write('../extension/icons/16.png', 16, 'small');
+await write('../extension/icons/32.png', 32, 'small');
+await write('../extension/icons/48.png', 48, 'rounded');
+await write('../extension/icons/128.png', 128, 'rounded');
+
+// Platform icon sets, then replace the smallest macOS sizes, where the
+// full artwork is unreadable, with the zoomed variant.
+execFileSync('dart', ['run', 'flutter_launcher_icons'], { cwd: '../app', stdio: 'ignore' });
+const mac = '../app/macos/Runner/Assets.xcassets/AppIcon.appiconset';
+await write(`${mac}/app_icon_16.png`, 16, 'macos-small');
+await write(`${mac}/app_icon_32.png`, 32, 'macos-small');
+await write(`${mac}/app_icon_64.png`, 64, 'macos-small');
 await browser.close();

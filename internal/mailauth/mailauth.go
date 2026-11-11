@@ -56,6 +56,15 @@ func FromDomain(fromHdr string) string {
 	return OrgDomain(a.Address[at+1:])
 }
 
+// TrustAll treats every message as genuinely from its From domain. It
+// exists only for local development and tests, where there is no real
+// sender to verify.
+type TrustAll struct{}
+
+func (TrustAll) Check(_ net.IP, _, _, fromHdr string, _ []byte) Result {
+	return Result{Verdict: Pass, Detail: "not checked (development)", Domain: FromDomain(fromHdr)}
+}
+
 // DNS is the Checker that performs real DNS lookups.
 type DNS struct{}
 

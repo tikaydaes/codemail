@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Codemail
+Comment=Sign-in codes and links from your own server
+Exec=codemail
+Icon=codemail
+Terminal=false
+Categories=Network;Email;Utility;
+StartupWMClass=codemail

@@ -1,0 +1,26 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; width: 340px; background: #0d1430; color: #eceef2; font: 14px/1.45 system-ui, sans-serif; }
+header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #25305c; font-weight: 650; font-size: 15px; }
+header img { border-radius: 5px; }
+#who { margin-left: auto; font-weight: 400; font-size: 12px; color: #a9b4d0; }
+main { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+h2 { margin: 6px 0 0; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #a9b4d0; }
+p { margin: 0; }
+.muted { color: #a9b4d0; font-size: 13px; }
+.error { color: #ffb4a8; font-size: 13px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #a9b4d0; }
+input { min-height: 40px; padding: 0 10px; border: 1px solid #3a4780; border-radius: 8px; background: #111a3a; color: #eceef2; font: inherit; }
+button { min-height: 40px; padding: 0 12px; border: 1px solid #3a4780; border-radius: 8px; background: #111a3a; color: #eceef2; font: inherit; font-weight: 600; cursor: pointer; }
+button:hover { border-color: #6f86d6; }
+button.primary { background: #9ff3ff; border-color: #9ff3ff; color: #06202a; }
+button.plain { min-height: 32px; border: 0; background: none; color: #a9b4d0; font-weight: 400; padding: 0; text-align: left; }
+button:focus-visible, input:focus-visible { outline: 2px solid #9ff3ff; outline-offset: 2px; }
+.item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #25305c; border-radius: 10px; background: #111a3a; }
+.item .grow { flex: 1 1 auto; min-width: 0; }
+.item .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .sub { font-size: 12px; color: #a9b4d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.code { font: 600 17px ui-monospace, Menlo, Consolas, monospace; letter-spacing: .06em; color: #9ff3ff; white-space: nowrap; }
+.item button { min-height: 34px; padding: 0 10px; }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1 1 0; }

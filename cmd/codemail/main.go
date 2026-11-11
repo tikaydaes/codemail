@@ -98,6 +98,7 @@ func serve(args []string) error {
 	httpAddr := fl.String("http", ":8080", "HTTP listen address, used with -dev or -behind-proxy")
 	behindProxy := fl.Bool("behind-proxy", false, "serve plain HTTP on -http; a proxy in front provides HTTPS")
 	dev := fl.Bool("dev", false, "local development: http://localhost:8080, SMTP on :2525, no certificates or sender checks")
+	trustSenders := fl.Bool("dev-trust-senders", false, "with -dev: treat every sender as verified, for testing the browser extension")
 	retention := fl.Duration("retention", 7*24*time.Hour, "how long to keep messages by default")
 	maxBytes := fl.Int64("max-bytes", 10<<20, "largest accepted message")
 	fl.Parse(args)
@@ -146,6 +147,9 @@ func serve(args []string) error {
 
 	switch {
 	case *dev:
+		if *trustSenders {
+			backend.Auth = mailauth.TrustAll{}
+		}
 		go func() { errc <- httpSrv.ListenAndServe() }()
 	case *behindProxy:
 		// The proxy holds the web certificate, so SMTP needs its own.
