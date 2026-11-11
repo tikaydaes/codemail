@@ -1,0 +1,154 @@
+name: apps
+
+# Builds the Flutter app for every platform. Nothing is published to an
+# app store: builds are attached to the workflow run, and to the GitHub
+# release when a version tag is pushed.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths: ["app/**", ".github/workflows/apps.yml"]
+  pull_request:
+    paths: ["app/**", ".github/workflows/apps.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # attach builds to releases
+
+env:
+  FLUTTER_VERSION: "3.47.9"
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter build apk --release --split-per-abi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemail-android
+          path: app/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+
+  linux:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev
+        working-directory: .
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter build linux --release
+      - run: tar -C build/linux/x64/release -czf codemail-linux-x64.tar.gz bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemail-linux
+          path: app/codemail-linux-x64.tar.gz
+          if-no-files-found: error
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter build windows --release
+      - run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath codemail-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemail-windows
+          path: app/codemail-windows-x64.zip
+          if-no-files-found: error
+
+  macos:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter build macos --release
+      # Not signed with an Apple developer certificate: on first launch,
+      # right-click the app and choose Open.
+      - run: ditto -c -k --keepParent build/macos/Build/Products/Release/Codemail.app codemail-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemail-macos
+          path: app/codemail-macos.zip
+          if-no-files-found: error
+
+  ios:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter build ios --release --no-codesign
+      # An unsigned package for sideloading tools (AltStore, SideStore),
+      # which sign it with the user's own Apple ID.
+      - run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry codemail-ios-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codemail-ios
+          path: app/codemail-ios-unsigned.ipa
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, linux, windows, macos, ios]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

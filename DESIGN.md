@@ -219,12 +219,13 @@ All under `/api/v1`, JSON, authenticated by session cookie or
 | Client    | Stack                               | Role                          |
 |-----------|-------------------------------------|-------------------------------|
 | Web       | Plain HTML, CSS and JavaScript modules, embedded in the binary | Everything, including admin and account management |
-| macOS     | Swift, SwiftUI, menu bar app        | Codes, notifications, auto-copy |
-| Windows   | C#, WinUI 3, tray app               | Same                          |
-| Linux     | Rust, GTK 4 / libadwaita, tray app  | Same                          |
-| iOS       | Swift, SwiftUI                      | Codes, messages, addresses    |
-| Android   | Kotlin, Jetpack Compose             | Same, plus background service |
+| Apps      | Flutter, one codebase in `app/` for Android, iOS, macOS, Windows and Linux | Codes, messages, addresses, notifications; tray and auto-copy on desktop; background service on Android |
 | Extension | WebExtension (Chrome, Firefox, Safari) | Offer codes in sign-in fields |
+
+**Distribution.** No main app stores. Apps are downloads attached to
+GitHub releases; the Android app carries no Google libraries so it can go
+on F-Droid; the iOS app is an unsigned package for sideloading or building
+yourself. The browser extension is likewise distributed directly.
 
 Account management (passkeys, domains, admin) lives only in the web app;
 native apps link to it.
@@ -336,7 +337,10 @@ Still to build, in order:
 
 1. Browser extension.
 2. First real deployment; verify certificates and sender checks.
-3. macOS app, then iOS, Android, Windows, Linux.
+3. Apps: a first Flutter version exists in `app/` (see its README). Still
+   to do: real-device testing, release signing, app icons, running the
+   Android connection in the service itself so it survives the app being
+   swiped away.
 4. PostgreSQL backend, `migrate-db`, `backup`.
 5. Ongoing: corrections loop into training, link recall, promo codes.
 
@@ -346,8 +350,7 @@ Still to build, in order:
   the weakest part of the product and cannot be engineered around.
 - **Port 25 reputation and blocking** affect whether senders can reach a
   self-hosted server at all.
-- **Five native codebases** is a large maintenance load; the build order
-  puts the web app and extension first so the product is usable before
-  any of them exist.
+- **The apps are one Flutter codebase**, chosen over five native ones to
+  keep maintenance manageable. The cost is a less native desktop feel.
 - **Extraction misses** are mitigated by keeping every message viewable
   and by the corrections loop.

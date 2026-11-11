@@ -1,0 +1,170 @@
+// The parts of the app that talk to the operating system: notifications,
+// the desktop tray and window, and the Android background service.
+import 'dart:io';
+
+import 'package:flutter/widgets.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:tray_manager/tray_manager.dart';
+import 'package:window_manager/window_manager.dart';
+
+import 'app_state.dart';
+
+final _notifications = FlutterLocalNotificationsPlugin();
+var _nextNotification = 0;
+
+/// Sets up system notifications and returns the function that shows one.
+/// Never throws: without notifications the app still works.
+Future<Notify> initNotifications() async {
+  var ready = false;
+  try {
+    await _notifications.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(),
+        macOS: DarwinInitializationSettings(),
+        linux: LinuxInitializationSettings(defaultActionName: 'Open'),
+        windows: WindowsInitializationSettings(
+          appName: 'Codemail',
+          appUserModelId: 'io.github.tikaydaes.codemail',
+          guid: '6f1d6c0a-6b0c-4f0e-9a1f-2f7d3f6a9c41',
+        ),
+      ),
+    );
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+    ready = true;
+  } on Object catch (e) {
+    debugPrint('notifications unavailable: $e');
+  }
+  return (title, body) async {
+    if (!ready) return;
+    try {
+      await _notifications.show(
+        id: _nextNotification++,
+        title: title,
+        body: body,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'codes',
+            'Sign-in codes',
+            channelDescription: 'New sign-in codes and confirmation links',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+          macOS: DarwinNotificationDetails(),
+          linux: LinuxNotificationDetails(),
+          windows: WindowsNotificationDetails(),
+        ),
+      );
+    } on Object catch (e) {
+      debugPrint('notification failed: $e');
+    }
+  };
+}
+
+/// On desktop the app lives in the system tray: closing the window hides
+/// it, and the live connection keeps running so codes still arrive.
+class DesktopShell with TrayListener, WindowListener {
+  Future<void> init() async {
+    await windowManager.ensureInitialized();
+    await windowManager.waitUntilReadyToShow(
+      const WindowOptions(
+        size: Size(440, 720),
+        minimumSize: Size(360, 480),
+        title: 'Codemail',
+      ),
+      () async {
+        await windowManager.show();
+        await windowManager.focus();
+      },
+    );
+    try {
+      await trayManager.setIcon(
+        Platform.isWindows ? 'assets/tray.ico' : 'assets/tray.png',
+      );
+      await trayManager.setToolTip('Codemail');
+      await trayManager.setContextMenu(
+        Menu(
+          items: [
+            MenuItem(key: 'show', label: 'Open Codemail'),
+            MenuItem.separator(),
+            MenuItem(key: 'quit', label: 'Quit'),
+          ],
+        ),
+      );
+      trayManager.addListener(this);
+      // Only hide on close once there is a tray icon to bring it back.
+      await windowManager.setPreventClose(true);
+      windowManager.addListener(this);
+    } on Object catch (e) {
+      debugPrint('tray unavailable: $e');
+    }
+  }
+
+  Future<void> _show() async {
+    await windowManager.show();
+    await windowManager.focus();
+  }
+
+  @override
+  void onWindowClose() => windowManager.hide();
+
+  @override
+  void onTrayIconMouseDown() => _show();
+
+  @override
+  void onTrayIconRightMouseDown() => trayManager.popUpContextMenu();
+
+  @override
+  void onTrayMenuItemClick(MenuItem menuItem) {
+    if (menuItem.key == 'show') {
+      _show();
+    } else if (menuItem.key == 'quit') {
+      windowManager.destroy();
+    }
+  }
+}
+
+/// Android stops background apps from holding a connection unless they
+/// run a foreground service with a visible notification. No push service
+/// is used, so this is how codes keep arriving while the app is in the
+/// background. It does not survive the app being swiped away.
+Future<void> syncBackgroundService(AppState state) async {
+  if (!Platform.isAndroid) return;
+  try {
+    final want = state.signedIn && state.stayConnected;
+    final running = await FlutterForegroundTask.isRunningService;
+    if (want && !running) {
+      FlutterForegroundTask.init(
+        androidNotificationOptions: AndroidNotificationOptions(
+          channelId: 'connection',
+          channelName: 'Connection',
+          channelDescription:
+              'Shown while Codemail stays connected to your server',
+          channelImportance: NotificationChannelImportance.LOW,
+          priority: NotificationPriority.LOW,
+        ),
+        iosNotificationOptions: const IOSNotificationOptions(),
+        foregroundTaskOptions: ForegroundTaskOptions(
+          eventAction: ForegroundTaskEventAction.nothing(),
+          allowWakeLock: true,
+          allowWifiLock: true,
+        ),
+      );
+      await FlutterForegroundTask.startService(
+        serviceTypes: [ForegroundServiceTypes.remoteMessaging],
+        notificationTitle: 'Codemail is connected',
+        notificationText: 'Sign-in codes arrive while this is on',
+      );
+    } else if (!want && running) {
+      await FlutterForegroundTask.stopService();
+    }
+  } on Object catch (e) {
+    debugPrint('background service unavailable: $e');
+  }
+}
