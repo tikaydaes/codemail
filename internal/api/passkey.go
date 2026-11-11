@@ -224,6 +224,7 @@ func (s *Server) handleRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		}
 		if c.user.IsAdmin {
 			s.Store.SetSetting(ctx, "setup_token", "")
+			s.Log.Info("admin account created; the setup link no longer works", "username", c.user.Username)
 		}
 	}
 	data, _ := json.Marshal(cred)
