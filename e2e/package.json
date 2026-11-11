@@ -1,0 +1,7 @@
+{
+  "name": "codemail-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser test of the web app. Development only; the server itself needs no Node.",
+  "devDependencies": { "playwright": "^1.50.0" }
+}
