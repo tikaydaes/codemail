@@ -62,10 +62,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Package mirrors are sometimes briefly unreachable from the runners,
+      # so refresh the index and retry a few times before giving up.
       - run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
-            libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev
+          for attempt in 1 2 3 4 5; do
+            sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=5 \
+              clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+              libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev \
+              libwebkit2gtk-4.1-dev libsoup-3.0-dev && break
+            echo "package install failed (attempt $attempt); retrying in 30 seconds"
+            sleep 30
+          done
+          pkg-config --exists gtk+-3.0 webkit2gtk-4.1 libsecret-1 ayatana-appindicator3-0.1
         working-directory: .
       - uses: subosito/flutter-action@v2
         with:
