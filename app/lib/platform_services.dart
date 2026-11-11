@@ -9,13 +9,14 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app_state.dart';
+import 'background_service.dart';
 
 final _notifications = FlutterLocalNotificationsPlugin();
 var _nextNotification = 0;
 
 /// Sets up system notifications and returns the function that shows one.
 /// Never throws: without notifications the app still works.
-Future<Notify> initNotifications() async {
+Future<Notify> initNotifications({bool askPermission = true}) async {
   var ready = false;
   try {
     await _notifications.initialize(
@@ -31,11 +32,14 @@ Future<Notify> initNotifications() async {
         ),
       ),
     );
-    await _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+    // Asking needs a visible screen, so the background service skips it.
+    if (askPermission) {
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+    }
     ready = true;
   } on Object catch (e) {
     debugPrint('notifications unavailable: $e');
@@ -132,8 +136,9 @@ class DesktopShell with TrayListener, WindowListener {
 
 /// Android stops background apps from holding a connection unless they
 /// run a foreground service with a visible notification. No push service
-/// is used, so this is how codes keep arriving while the app is in the
-/// background. It does not survive the app being swiped away.
+/// is used, so this is how codes keep arriving when the app is not open.
+/// The service runs [backgroundMain] in its own isolate, so it carries on
+/// after the app is swiped away and starts again when the phone restarts.
 Future<void> syncBackgroundService(AppState state) async {
   if (!Platform.isAndroid) return;
   try {
@@ -151,7 +156,9 @@ Future<void> syncBackgroundService(AppState state) async {
         ),
         iosNotificationOptions: const IOSNotificationOptions(),
         foregroundTaskOptions: ForegroundTaskOptions(
-          eventAction: ForegroundTaskEventAction.nothing(),
+          eventAction: ForegroundTaskEventAction.repeat(60000),
+          autoRunOnBoot: true,
+          autoRunOnMyPackageReplaced: true,
           allowWakeLock: true,
           allowWifiLock: true,
         ),
@@ -160,6 +167,7 @@ Future<void> syncBackgroundService(AppState state) async {
         serviceTypes: [ForegroundServiceTypes.remoteMessaging],
         notificationTitle: 'Codemail is connected',
         notificationText: 'Sign-in codes arrive while this is on',
+        callback: backgroundMain,
       );
     } else if (!want && running) {
       await FlutterForegroundTask.stopService();

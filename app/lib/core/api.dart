@@ -58,8 +58,13 @@ class Pkce {
 /// Everything the app asks of a Codemail server. Has no Flutter
 /// dependency, so it runs in plain Dart tests and tools.
 class CodemailApi {
-  CodemailApi(this.server, {http.Client? client, this.tokens, this.onTokens})
-    : _http = client ?? http.Client();
+  CodemailApi(
+    this.server, {
+    http.Client? client,
+    this.tokens,
+    this.onTokens,
+    this.loadTokens,
+  }) : _http = client ?? http.Client();
 
   /// Base URL, e.g. https://mail.example.com
   final String server;
@@ -68,6 +73,22 @@ class CodemailApi {
 
   /// Called whenever tokens are issued or renewed, so they can be saved.
   final void Function(Tokens)? onTokens;
+
+  /// Reads the tokens currently saved. The app and its background service
+  /// share one saved session, so before renewing, each checks whether the
+  /// other has already done so.
+  final Future<Tokens?> Function()? loadTokens;
+
+  static bool _expiring(Tokens t) =>
+      t.expiresAt.difference(DateTime.now()) < const Duration(seconds: 60);
+
+  /// Switches to the saved tokens if they differ from the ones in use.
+  Future<bool> _adoptSaved() async {
+    final saved = await loadTokens?.call();
+    if (saved == null || saved.access == tokens?.access) return false;
+    tokens = saved;
+    return true;
+  }
 
   Future<Tokens>? _refreshing;
 
@@ -157,6 +178,8 @@ class CodemailApi {
   Future<Tokens> _refresh() {
     return _refreshing ??= () async {
       try {
+        // Someone else may have renewed already; use theirs if still good.
+        if (await _adoptSaved() && !_expiring(tokens!)) return tokens!;
         final current = tokens;
         if (current == null) throw SignedOutException();
         return await _token({
@@ -193,11 +216,10 @@ class CodemailApi {
   // --- authenticated requests ---
 
   Future<String> _accessToken() async {
+    if (tokens == null) await _adoptSaved();
     final t = tokens;
     if (t == null) throw SignedOutException();
-    if (t.expiresAt.difference(DateTime.now()) < const Duration(seconds: 60)) {
-      return (await _refresh()).access;
-    }
+    if (_expiring(t)) return (await _refresh()).access;
     return t.access;
   }
 

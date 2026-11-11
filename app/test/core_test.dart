@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:codemail/core/api.dart';
 import 'package:codemail/core/format.dart';
 import 'package:codemail/core/sse.dart';
+import 'package:codemail/core/watcher.dart';
+import 'package:codemail/session_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A stand-in Codemail server with just enough behaviour to exercise the
@@ -272,5 +274,114 @@ void main() {
     expect(seen, ['open', 'message']);
     expect(server.lastEventId, '41');
     await sub.cancel();
+  });
+
+  test('two holders of one saved session renew only once', () async {
+    // The app and its background service share saved tokens. When one has
+    // renewed, the other must pick those up instead of renewing again.
+    final secrets = MemorySecretStore();
+    final store = SessionStore(secrets);
+    CodemailApi holder() => CodemailApi(
+      server.url,
+      onTokens: (t) => store.save(server.url, t),
+      loadTokens: () async => (await store.load())?.tokens,
+    );
+    final app = holder();
+    await app.exchangeCode(
+      code: 'good-code',
+      pkce: Pkce.generate(),
+      redirectUri: 'x',
+    );
+    final service = holder()..tokens = (await store.load())!.tokens;
+
+    server.validAccess = 'expired-on-server';
+    await app.me(); // the app renews and saves
+    expect(server.refreshes, 1);
+    await service.me(); // the service still holds the old tokens
+    expect(
+      server.refreshes,
+      1,
+      reason: 'the service should adopt the saved tokens',
+    );
+    expect(service.tokens!.access, app.tokens!.access);
+  });
+
+  test('the watcher announces each new code once', () async {
+    final api = CodemailApi(server.url);
+    await api.exchangeCode(
+      code: 'good-code',
+      pkce: Pkce.generate(),
+      redirectUri: 'x',
+    );
+    final announced = <String>[];
+    int? saved;
+    CodeWatcher watcher() => CodeWatcher(
+      api: api,
+      onCode: (m) async => announced.add(m.code),
+      readLastId: () async => saved,
+      writeLastId: (id) async => saved = id,
+    );
+    Future<void> settle() =>
+        Future<void>.delayed(const Duration(milliseconds: 150));
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    Map<String, Object> message(
+      int id,
+      String code, {
+      int age = 0,
+      String kind = 'code',
+    }) => {
+      'id': id,
+      'kind': kind,
+      'code': code,
+      'service': 'S',
+      'flags': <String>[],
+      'received_at': now - age,
+    };
+
+    final first = watcher();
+    await first.start();
+    expect(
+      saved,
+      7,
+      reason: 'starts from the newest existing message without announcing it',
+    );
+    while (server.streams.isEmpty) {
+      await settle();
+    }
+    await server.push('message', 8, message(8, '111222'));
+    await server.push(
+      'message',
+      8,
+      message(8, '111222'),
+    ); // a replay of the same message
+    await server.push(
+      'message',
+      9,
+      message(9, '', kind: 'other'),
+    ); // no code or link
+    await server.push(
+      'message',
+      10,
+      message(10, '999000', age: 3600),
+    ); // missed long ago
+    await server.push('message', 11, message(11, '333444'));
+    await settle();
+    expect(announced, ['111222', '333444']);
+    expect(saved, 11);
+    first.stop();
+
+    // After a restart it resumes from where it stopped.
+    server.streams.clear();
+    final second = watcher();
+    await second.start();
+    while (server.streams.isEmpty) {
+      await settle();
+    }
+    expect(server.lastEventId, '11');
+    await server.push('message', 11, message(11, '333444'));
+    await server.push('message', 12, message(12, '555666'));
+    await settle();
+    expect(announced, ['111222', '333444', '555666']);
+    second.stop();
   });
 }

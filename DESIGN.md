@@ -211,7 +211,7 @@ All under `/api/v1`, JSON, authenticated by session cookie or
 | Web           | Nothing; live while the tab is open                          |
 | Desktop apps  | Run in the menu bar or tray and stay connected               |
 | Extension     | Background worker reconnects when the browser is running     |
-| Android       | Foreground service keeps the stream open, with a permanent notification |
+| Android       | A foreground service in its own isolate keeps the stream open, with a permanent notification; it survives the app being closed and restarts after boot |
 | iPhone        | Nothing; the app catches up the moment it is opened          |
 
 ## 10. Clients
@@ -341,9 +341,7 @@ Still to build, in order:
    `extension/` (see its README). Safari is not supported yet.
 2. First real deployment; verify certificates and sender checks.
 3. Apps: a first Flutter version exists in `app/` (see its README). Still
-   to do: real-device testing, release signing, app icons, running the
-   Android connection in the service itself so it survives the app being
-   swiped away.
+   to do: real-device testing and release signing.
 4. Ongoing: link recall, promo codes.
 
 ## 15. Risks

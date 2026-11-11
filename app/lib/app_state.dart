@@ -12,25 +12,9 @@ import 'core/api.dart';
 import 'core/format.dart';
 import 'core/models.dart';
 import 'core/sse.dart';
+import 'session_store.dart';
 
-/// Where the device's tokens are kept: the platform keychain in the app,
-/// memory in tests.
-abstract class SecretStore {
-  Future<String?> read(String key);
-  Future<void> write(String key, String value);
-  Future<void> delete(String key);
-}
-
-class MemorySecretStore implements SecretStore {
-  final Map<String, String> values = {};
-
-  @override
-  Future<String?> read(String key) async => values[key];
-  @override
-  Future<void> write(String key, String value) async => values[key] = value;
-  @override
-  Future<void> delete(String key) async => values.remove(key);
-}
+export 'session_store.dart' show MemorySecretStore, SecretStore;
 
 /// Shows a system notification.
 typedef Notify = Future<void> Function(String title, String body);
@@ -54,7 +38,7 @@ class AppState extends ChangeNotifier {
   final Notify? notify;
   final http.Client Function()? clientFactory;
 
-  static const _sessionKey = 'session';
+  late final SessionStore session = SessionStore(secrets);
 
   CodemailApi? api;
   String? server;
@@ -73,6 +57,10 @@ class AppState extends ChangeNotifier {
   bool _disposed = false;
 
   bool get signedIn => api != null;
+
+  /// Whether the Android background service is the one showing notifications.
+  bool get backgroundAnnounces =>
+      !kIsWeb && Platform.isAndroid && stayConnected;
 
   // --- preferences ---
 
@@ -101,31 +89,16 @@ class AppState extends ChangeNotifier {
     server,
     client: clientFactory?.call(),
     tokens: tokens,
-    onTokens: (t) => _save(server, t),
-  );
-
-  Future<void> _save(String server, Tokens t) => secrets.write(
-    _sessionKey,
-    jsonEncode({
-      'server': server,
-      'access': t.access,
-      'refresh': t.refresh,
-      'expires': t.expiresAt.millisecondsSinceEpoch,
-    }),
+    onTokens: (t) => session.save(server, t),
+    loadTokens: () async => (await session.load())?.tokens,
   );
 
   /// Restores the saved session, if there is one.
   Future<void> load() async {
     try {
-      final raw = await secrets.read(_sessionKey);
-      if (raw != null) {
-        final j = jsonDecode(raw) as Map<String, dynamic>;
-        final tokens = Tokens(
-          access: j['access'] as String,
-          refresh: j['refresh'] as String,
-          expiresAt: DateTime.fromMillisecondsSinceEpoch(j['expires'] as int),
-        );
-        await _start(newApi(j['server'] as String, tokens: tokens));
+      final saved = await session.load();
+      if (saved != null) {
+        await _start(newApi(saved.server, tokens: saved.tokens));
       }
     } on Exception catch (e) {
       error = '$e';
@@ -151,7 +124,7 @@ class AppState extends ChangeNotifier {
   Future<void> signOut() async {
     final a = api;
     _stop();
-    await secrets.delete(_sessionKey);
+    await session.clear();
     await a?.signOut();
     a?.close();
     notifyListeners();
@@ -175,7 +148,7 @@ class AppState extends ChangeNotifier {
       error = null;
     } on SignedOutException catch (e) {
       _stop();
-      await secrets.delete(_sessionKey);
+      await session.clear();
       error = e.message;
     } on ApiException catch (e) {
       error = e.message;
@@ -293,7 +266,11 @@ class AppState extends ChangeNotifier {
     } else {
       body = 'Confirmation link received';
     }
-    notify?.call(m.title, autoCopy && m.hasCode ? '$body · copied' : body);
+    // On Android the background service announces new codes, whether or
+    // not the app is open; announcing here too would show each one twice.
+    if (!backgroundAnnounces) {
+      notify?.call(m.title, autoCopy && m.hasCode ? '$body · copied' : body);
+    }
     if (autoCopy && m.hasCode) copyToClipboard(m.code);
   }
 
