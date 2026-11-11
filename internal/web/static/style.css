@@ -33,6 +33,7 @@ p { margin: 0; }
 .nav { flex: 1 1 220px; padding: 24px 16px; background: var(--surface); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 4px; }
 .brand { font-size: 20px; font-weight: 650; padding: 0 12px 20px; }
+.logo { vertical-align: -6px; margin-right: 10px; border-radius: 7px; }
 .nav a { display: flex; justify-content: space-between; align-items: center; min-height: 44px; padding: 0 12px;
   border-radius: 8px; color: var(--ink); text-decoration: none; }
 .nav a:hover { background: var(--ground); }

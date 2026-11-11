@@ -5,6 +5,8 @@ import { addressesView, devicesView, settingsView, adminView } from '/manage.js'
 const root = document.getElementById('app');
 export const state = { me: null, server: null, limits: null, live: false, onEvent: null, timer: null };
 
+const logo = () => h('img', { src: '/icon.png', alt: '', width: 28, height: 28, class: 'logo' });
+
 // --- routing ---
 
 const pages = [
@@ -51,7 +53,7 @@ export async function render() {
 
 function navBar(current) {
   return h('nav', { class: 'nav', 'aria-label': 'Main' },
-    h('div', { class: 'brand' }, 'Codemail'),
+    h('div', { class: 'brand' }, logo(), 'Codemail'),
     pages.filter(([name]) => name !== 'admin' || state.me.is_admin).map(([name, label]) =>
       h('a', { href: '#/' + name, 'aria-current': name === current ? 'page' : null }, label)),
     h('div', { class: 'who' }, 'Signed in as ', h('strong', {}, state.me.username)));
@@ -116,7 +118,7 @@ async function afterSignIn() {
 function authView(setupToken) {
   const mode = state.server.needs_setup ? 'setup' : state.server.registration;
   const wrap = h('div', { class: 'auth' },
-    h('div', { style: 'text-align:center' }, h('div', { class: 'brand', style: 'padding:0;font-size:28px' }, 'Codemail'),
+    h('div', { style: 'text-align:center' }, h('div', { class: 'brand', style: 'padding:0;font-size:28px' }, logo(), 'Codemail'),
       h('div', { class: 'muted' }, state.server.mail_host)));
   if (!passkeysSupported()) {
     wrap.append(h('div', { class: 'notice danger', role: 'alert' }, 'This browser does not support passkeys, which Codemail needs to sign you in.'));
