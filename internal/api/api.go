@@ -93,6 +93,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+a+"/passkeys", s.session(s.handlePasskeys))
 	mux.HandleFunc("DELETE "+a+"/passkeys/{id}", s.session(s.handleDeletePasskey))
 	mux.HandleFunc("POST "+a+"/recovery-codes", s.session(s.handleNewRecoveryCodes))
+	mux.HandleFunc("GET "+a+"/sessions", s.session(s.handleSessions))
+	mux.HandleFunc("DELETE "+a+"/sessions/{id}", s.session(s.handleDeleteSession))
 
 	mux.HandleFunc("GET "+a+"/messages", s.auth(s.handleMessages))
 	mux.HandleFunc("GET "+a+"/messages/{id}", s.auth(s.handleMessage))
@@ -255,21 +257,54 @@ type handler func(w http.ResponseWriter, r *http.Request, u store.User)
 // identify returns the signed-in user and whether a browser session (as
 // opposed to a device token) authenticated the request.
 func (s *Server) identify(r *http.Request) (u store.User, viaSession bool, err error) {
+	u, se, err := s.identifySession(r)
+	return u, se != nil, err
+}
+
+// identifySession is identify, also returning the browser session used.
+func (s *Server) identifySession(r *http.Request) (u store.User, session *store.Session, err error) {
 	ctx := r.Context()
 	if bearer, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); found {
 		d, err := s.Store.DeviceByAccess(ctx, hashToken(bearer), time.Now())
 		if err != nil {
-			return u, false, err
+			return u, nil, err
 		}
 		u, err = s.Store.UserByID(ctx, d.UserID)
-		return u, false, err
+		return u, nil, err
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
-		return u, false, store.ErrNotFound
+		return u, nil, store.ErrNotFound
 	}
-	u, err = s.Store.SessionUser(ctx, hashToken(c.Value), time.Now())
-	return u, true, err
+	u, se, err := s.Store.SessionUser(ctx, hashToken(c.Value), time.Now())
+	if err != nil {
+		return u, nil, err
+	}
+	return u, &se, nil
+}
+
+// browserLabel names a browser and system from its User-Agent, for the
+// list of signed-in browsers. It only needs to be recognisable.
+func browserLabel(ua string) string {
+	pick := func(names ...string) string {
+		for i := 0; i < len(names); i += 2 {
+			if strings.Contains(ua, names[i]) {
+				return names[i+1]
+			}
+		}
+		return ""
+	}
+	browser := pick("Edg/", "Edge", "OPR/", "Opera", "Vivaldi", "Vivaldi", "Firefox/", "Firefox", "Chrome/", "Chrome", "Safari/", "Safari")
+	system := pick("iPhone", "iPhone", "iPad", "iPad", "Android", "Android", "Mac OS X", "macOS", "Windows", "Windows", "CrOS", "ChromeOS", "Linux", "Linux")
+	switch {
+	case browser != "" && system != "":
+		return browser + " on " + system
+	case browser != "":
+		return browser
+	case system != "":
+		return "Browser on " + system
+	}
+	return "Unknown browser"
 }
 
 func (s *Server) guard(next handler, needSession, needAdmin bool) http.HandlerFunc {
@@ -305,7 +340,8 @@ func (s *Server) admin(next handler) http.HandlerFunc   { return s.guard(next, t
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request, userID int64) error {
 	token, hash := newToken()
-	if err := s.Store.CreateSession(r.Context(), hash, userID, time.Now().Add(sessionTTL)); err != nil {
+	se := store.Session{UserID: userID, ExpiresAt: time.Now().Add(sessionTTL), Label: browserLabel(r.UserAgent())}
+	if err := s.Store.CreateSession(r.Context(), hash, &se); err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{

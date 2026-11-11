@@ -340,7 +340,7 @@ func (s *Server) handleAdminCorrections(w http.ResponseWriter, r *http.Request, 
 	enc := json.NewEncoder(w)
 	for _, c := range corrections {
 		enc.Encode(map[string]any{
-			"id": c.ID, "kind": c.Kind, "value": c.Value, "created_at": unix(c.CreatedAt),
+			"id": c.ID, "message_id": c.MessageID, "kind": c.Kind, "value": c.Value, "created_at": unix(c.CreatedAt),
 			"raw": base64.StdEncoding.EncodeToString(c.Raw),
 		})
 	}

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,6 +59,13 @@ type passAuth struct{}
 
 func (passAuth) Check(_ net.IP, _, _, fromHdr string, _ []byte) mailauth.Result {
 	return mailauth.Result{Verdict: mailauth.Pass, Detail: "test", Domain: mailauth.FromDomain(fromHdr)}
+}
+
+type testWriter struct{ t *testing.T }
+
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Log(strings.TrimSpace(string(p)))
+	return len(p), nil
 }
 
 type env struct {
@@ -176,12 +185,30 @@ func list(m map[string]any, key string) []any { l, _ := m[key].([]any); return l
 
 func TestEverything(t *testing.T) {
 	ctx := context.Background()
-	st, err := sqlstore.Open(filepath.Join(t.TempDir(), "test.db"))
+	// The same test runs against PostgreSQL when CODEMAIL_TEST_POSTGRES
+	// names an empty database, e.g. postgres://localhost:5432/codemail_test
+	var st *sqlstore.DB
+	var err error
+	if url := os.Getenv("CODEMAIL_TEST_POSTGRES"); url != "" {
+		wipe, werr := sql.Open("pgx", url)
+		if werr != nil {
+			t.Fatal(werr)
+		}
+		if _, werr := wipe.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`); werr != nil {
+			t.Fatal(werr)
+		}
+		wipe.Close()
+		st, err = sqlstore.OpenPostgres(url)
+	} else {
+		st, err = sqlstore.Open(filepath.Join(t.TempDir(), "test.db"))
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	t.Logf("database: postgres=%v", st.Postgres())
+	// Server errors are shown in the test output; routine lines are not.
+	log := slog.New(slog.NewTextHandler(testWriter{t}, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	httpLn, _ := net.Listen("tcp", "127.0.0.1:0")
 	origin := fmt.Sprintf("http://localhost:%d", httpLn.Addr().(*net.TCPAddr).Port)
@@ -254,6 +281,26 @@ func TestEverything(t *testing.T) {
 	if status, out := kaity2.login(); status != 200 || out["user"].(map[string]any)["username"] != "kaity" {
 		t.Fatalf("passkey sign-in = %d %v", status, out)
 	}
+	sessions := list(kaity.must(200, "GET", "/api/v1/sessions", nil), "sessions")
+	if len(sessions) != 2 {
+		t.Fatalf("kaity has %d sessions, want 2", len(sessions))
+	}
+	for _, x := range sessions {
+		se := x.(map[string]any)
+		if se["current"] == true {
+			continue
+		}
+		// Sign the other browser out from this one.
+		kaity.must(200, "DELETE", fmt.Sprintf("/api/v1/sessions/%v", se["id"]), nil)
+	}
+	if status, _ := kaity2.do("GET", "/api/v1/me", nil); status != 401 {
+		t.Errorf("a revoked browser session = %d, want 401", status)
+	}
+	kaity.must(200, "GET", "/api/v1/me", nil)
+	if status, _ := sam.do("DELETE", fmt.Sprintf("/api/v1/sessions/%v", sessions[0].(map[string]any)["id"]), nil); status != 404 {
+		t.Errorf("revoking another user's session = %d, want 404", status)
+	}
+
 	rec := e.browser()
 	rec.must(200, "POST", "/api/v1/recovery", map[string]any{"username": "sam", "code": samCodes[0]})
 	if status, _ := e.browser().do("POST", "/api/v1/recovery", map[string]any{"username": "sam", "code": samCodes[0]}); status != 401 {
@@ -316,8 +363,10 @@ func TestEverything(t *testing.T) {
 	if status, _ := sam.do("GET", fmt.Sprintf("/api/v1/messages/%d", id), nil); status != 404 {
 		t.Errorf("reading another user's message = %d, want 404", status)
 	}
-	if found := list(kaity.must(200, "GET", "/api/v1/messages?q=551", nil), "messages"); len(found) != 1 {
-		t.Errorf("search found %d, want 1", len(found))
+	for _, q := range []string{"551", "FOO", "your foo"} {
+		if found := list(kaity.must(200, "GET", "/api/v1/messages?q="+url.QueryEscape(q), nil), "messages"); len(found) != 1 {
+			t.Errorf("search %q found %d, want 1", q, len(found))
+		}
 	}
 
 	// --- the extension is offered the code only on the sender's site ---
@@ -471,7 +520,18 @@ func TestEverything(t *testing.T) {
 	}
 	app.bearer = tok2["access_token"].(string)
 	app.must(200, "GET", "/api/v1/me", nil)
-	http.PostForm(origin+"/oauth/revoke", url.Values{"token": {tok2["refresh_token"].(string)}})
+	// Two parts of an app may renew at the same moment: the token that was
+	// just replaced still works briefly, so neither is signed out.
+	status, tok3 := e.token(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok["refresh_token"].(string)}})
+	if status != 200 {
+		t.Fatalf("renewing with the just-replaced refresh token = %d %v", status, tok3)
+	}
+	app.bearer = tok3["access_token"].(string)
+	app.must(200, "GET", "/api/v1/me", nil)
+	if status, _ := e.token(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"made-up"}}); status != 400 {
+		t.Errorf("renewing with an unknown refresh token = %d, want 400", status)
+	}
+	http.PostForm(origin+"/oauth/revoke", url.Values{"token": {tok3["refresh_token"].(string)}})
 	if status, _ := app.do("GET", "/api/v1/me", nil); status != 401 {
 		t.Errorf("revoked token = %d, want 401", status)
 	}
@@ -506,6 +566,39 @@ func TestEverything(t *testing.T) {
 	resp, _ := sam.http.Do(req)
 	if resp.StatusCode != 403 {
 		t.Errorf("cross-site delete = %d, want 403", resp.StatusCode)
+	}
+
+	// --- the whole database copies into another and stays usable ---
+	copyPath := filepath.Join(t.TempDir(), "copy.db")
+	dst, err := sqlstore.Open(copyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if err := sqlstore.Copy(ctx, st, dst); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	want, _ := st.Stats(ctx)
+	got, _ := dst.Stats(ctx)
+	if got.Users != want.Users || got.Messages != want.Messages || got.Corrections != want.Corrections || want.Users != 2 {
+		t.Errorf("copy has %+v, source has %+v", got, want)
+	}
+	if r, err := dst.Resolve(ctx, "shop@codes.example"); err != nil || r.Alias == nil || r.Alias.Label != "Shopping" {
+		t.Errorf("alias did not survive the copy: %+v, %v", r, err)
+	}
+	if err := sqlstore.Copy(ctx, st, dst); err == nil {
+		t.Error("copying into a database that already has data should fail")
+	}
+	backupPath := filepath.Join(t.TempDir(), "backup.db")
+	if err := dst.Backup(ctx, backupPath); err != nil {
+		t.Errorf("backup: %v", err)
+	} else if b, err := sqlstore.Open(backupPath); err != nil {
+		t.Errorf("open backup: %v", err)
+	} else {
+		if bs, _ := b.Stats(ctx); bs.Messages != want.Messages {
+			t.Errorf("backup has %d messages, want %d", bs.Messages, want.Messages)
+		}
+		b.Close()
 	}
 
 	// --- the web app is served, including for client-side routes ---

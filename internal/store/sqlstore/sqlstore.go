@@ -1,6 +1,7 @@
-// Package sqlstore implements store.Store on embedded SQLite. Queries use
-// portable SQL (integer timestamps and flags, RETURNING for new IDs) so a
-// PostgreSQL backend can share them.
+// Package sqlstore implements store.Store on SQL databases: embedded
+// SQLite (the default) and PostgreSQL. Both run the same queries, written
+// in portable SQL (integer timestamps, RETURNING for new IDs, "?"
+// placeholders that are renumbered for PostgreSQL).
 package sqlstore
 
 import (
@@ -9,17 +10,56 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite" // pure-Go SQLite driver
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
+	_ "modernc.org/sqlite"             // pure-Go SQLite driver
 
 	"github.com/tikaydaes/codemail/internal/store"
 )
 
+// conn wraps the database handle so every query passes through rebind.
+type conn struct {
+	raw *sql.DB
+	pg  bool
+}
+
+// rebind turns "?" placeholders into PostgreSQL's "$1", "$2", ...
+func (c *conn) rebind(q string) string {
+	if !c.pg {
+		return q
+	}
+	var b strings.Builder
+	n := 0
+	for _, r := range q {
+		if r == '?' {
+			n++
+			b.WriteString("$" + strconv.Itoa(n))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func (c *conn) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return c.raw.ExecContext(ctx, c.rebind(q), args...)
+}
+
+func (c *conn) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	return c.raw.QueryContext(ctx, c.rebind(q), args...)
+}
+
+func (c *conn) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return c.raw.QueryRowContext(ctx, c.rebind(q), args...)
+}
+
 type DB struct {
-	db   *sql.DB
-	path string
+	db   *conn
+	pg   bool
+	path string // SQLite file, for size reporting
 }
 
 var _ store.Store = (*DB)(nil)
@@ -30,7 +70,7 @@ CREATE TABLE users (
 	id         INTEGER PRIMARY KEY,
 	username   TEXT NOT NULL UNIQUE,
 	handle     BLOB NOT NULL UNIQUE,
-	is_admin   INTEGER NOT NULL DEFAULT 0,
+	is_admin   BOOLEAN NOT NULL DEFAULT FALSE,
 	retention  INTEGER NOT NULL DEFAULT 0,
 	created_at INTEGER NOT NULL
 );
@@ -73,7 +113,7 @@ CREATE TABLE grants (
 	challenge    TEXT NOT NULL,
 	device_name  TEXT NOT NULL,
 	platform     TEXT NOT NULL,
-	confirmed    INTEGER NOT NULL,
+	confirmed    BOOLEAN NOT NULL,
 	expires_at   INTEGER NOT NULL
 );
 CREATE TABLE invites (
@@ -88,11 +128,11 @@ CREATE TABLE domains (
 	id               INTEGER PRIMARY KEY,
 	name             TEXT NOT NULL UNIQUE,
 	owner_id         INTEGER REFERENCES users(id) ON DELETE CASCADE, -- NULL = shared
-	verified         INTEGER NOT NULL DEFAULT 0,
+	verified         BOOLEAN NOT NULL DEFAULT FALSE,
 	verify_token     TEXT NOT NULL DEFAULT '',
-	allow_mailbox    INTEGER NOT NULL DEFAULT 1,
-	allow_aliases    INTEGER NOT NULL DEFAULT 1,
-	allow_subdomains INTEGER NOT NULL DEFAULT 1,
+	allow_mailbox    BOOLEAN NOT NULL DEFAULT TRUE,
+	allow_aliases    BOOLEAN NOT NULL DEFAULT TRUE,
+	allow_subdomains BOOLEAN NOT NULL DEFAULT TRUE,
 	max_aliases      INTEGER NOT NULL DEFAULT 0,
 	max_generated    INTEGER NOT NULL DEFAULT 0,
 	last_checked     INTEGER NOT NULL DEFAULT 0,
@@ -105,7 +145,7 @@ CREATE TABLE aliases (
 	local           TEXT NOT NULL,
 	user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	label           TEXT NOT NULL DEFAULT '',
-	generated       INTEGER NOT NULL DEFAULT 0,
+	generated       BOOLEAN NOT NULL DEFAULT FALSE,
 	expected_sender TEXT NOT NULL DEFAULT '',
 	created_at      INTEGER NOT NULL,
 	UNIQUE (domain_id, local)
@@ -154,39 +194,108 @@ CREATE TABLE audit_log (
 	target TEXT NOT NULL,
 	at     INTEGER NOT NULL
 );
+`, `
+-- Sessions get an ID and details so a user can list and revoke them.
+CREATE TABLE sessions_new (
+	id         INTEGER PRIMARY KEY,
+	hash       BLOB NOT NULL UNIQUE,
+	user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	expires_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL DEFAULT 0,
+	last_seen  INTEGER NOT NULL DEFAULT 0,
+	label      TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO sessions_new (hash, user_id, expires_at) SELECT hash, user_id, expires_at FROM sessions;
+DROP TABLE sessions;
+ALTER TABLE sessions_new RENAME TO sessions;
+-- A device's previous refresh token stays valid briefly after rotation,
+-- so two parts of an app renewing at the same moment do not sign it out.
+ALTER TABLE devices ADD COLUMN prev_refresh_hash BLOB;
+ALTER TABLE devices ADD COLUMN rotated_at INTEGER NOT NULL DEFAULT 0;
 `}
 
+// forPostgres translates the SQLite-flavoured schema above.
+func forPostgres(schema string) string {
+	return strings.NewReplacer(
+		// Listed first, and with the same leading space as the next pair,
+		// so it wins where both match.
+		" INTEGER PRIMARY KEY", " BIGSERIAL PRIMARY KEY",
+		" INTEGER", " BIGINT",
+		" BLOB", " BYTEA",
+		" REAL", " DOUBLE PRECISION",
+	).Replace(schema)
+}
+
+// Open opens (creating if needed) a SQLite database file.
 func Open(path string) (*DB, error) {
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	s := &DB{db: db, path: path}
+	return finishOpen(&DB{db: &conn{raw: db}, path: path})
+}
+
+// OpenPostgres connects to a PostgreSQL database given its URL, such as
+// postgres://user:password@host/dbname.
+func OpenPostgres(url string) (*DB, error) {
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(10)
+	return finishOpen(&DB{db: &conn{raw: db, pg: true}, pg: true})
+}
+
+func finishOpen(s *DB) (*DB, error) {
 	if err := s.migrate(); err != nil {
-		db.Close()
+		s.db.raw.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
 }
 
-func (s *DB) Close() error { return s.db.Close() }
+func (s *DB) Close() error { return s.db.raw.Close() }
+
+// Postgres reports whether this store is a PostgreSQL database.
+func (s *DB) Postgres() bool { return s.pg }
+
+// schemaVersion is PRAGMA user_version on SQLite and a one-row table on
+// PostgreSQL.
+func (s *DB) schemaVersion() (int, error) {
+	var v int
+	if !s.pg {
+		return v, s.db.raw.QueryRow(`PRAGMA user_version`).Scan(&v)
+	}
+	if _, err := s.db.raw.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version BIGINT NOT NULL)`); err != nil {
+		return 0, err
+	}
+	err := s.db.raw.QueryRow(`SELECT version FROM schema_version`).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = s.db.raw.Exec(`INSERT INTO schema_version (version) VALUES (0)`)
+	}
+	return v, err
+}
 
 func (s *DB) migrate() error {
-	var v int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+	v, err := s.schemaVersion()
+	if err != nil {
 		return err
 	}
 	for ; v < len(migrations); v++ {
-		tx, err := s.db.Begin()
+		schema, bump := migrations[v], fmt.Sprintf(`PRAGMA user_version = %d`, v+1)
+		if s.pg {
+			schema, bump = forPostgres(schema), fmt.Sprintf(`UPDATE schema_version SET version = %d`, v+1)
+		}
+		tx, err := s.db.raw.Begin()
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(migrations[v]); err != nil {
+		if _, err := tx.Exec(schema); err != nil {
 			tx.Rollback()
-			return err
+			return fmt.Errorf("version %d: %w", v+1, err)
 		}
-		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, v+1)); err != nil {
+		if _, err := tx.Exec(bump); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -232,7 +341,7 @@ func changed(res sql.Result, err error) error {
 
 // taken maps a uniqueness violation to store.ErrTaken.
 func taken(err error) error {
-	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint") {
+	if err != nil && (strings.Contains(err.Error(), "UNIQUE constraint") || strings.Contains(err.Error(), "23505")) {
 		return store.ErrTaken
 	}
 	return err
@@ -346,16 +455,16 @@ func (s *DB) DeletePasskey(ctx context.Context, userID, id int64) error {
 }
 
 func (s *DB) ReplaceRecoveryCodes(ctx context.Context, userID int64, hashes [][]byte) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.raw.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID); err != nil {
+	if _, err := tx.ExecContext(ctx, s.db.rebind(`DELETE FROM recovery_codes WHERE user_id = ?`), userID); err != nil {
 		return err
 	}
 	for _, h := range hashes {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO recovery_codes (user_id, hash) VALUES (?, ?)`, userID, h); err != nil {
+		if _, err := tx.ExecContext(ctx, s.db.rebind(`INSERT INTO recovery_codes (user_id, hash) VALUES (?, ?)`), userID, h); err != nil {
 			return err
 		}
 	}
@@ -377,22 +486,68 @@ func (s *DB) UseRecoveryCode(ctx context.Context, userID int64, hash []byte) (bo
 
 // --- sessions ---
 
-func (s *DB) CreateSession(ctx context.Context, hash []byte, userID int64, expires time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (hash, user_id, expires_at) VALUES (?, ?, ?)`,
-		hash, userID, ts(expires))
-	return err
+func (s *DB) CreateSession(ctx context.Context, hash []byte, se *store.Session) error {
+	now := time.Now()
+	se.CreatedAt, se.LastSeen = now, now
+	return s.db.QueryRowContext(ctx, `
+		INSERT INTO sessions (hash, user_id, expires_at, created_at, last_seen, label)
+		VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+		hash, se.UserID, ts(se.ExpiresAt), ts(now), ts(now), se.Label).Scan(&se.ID)
 }
 
-func (s *DB) SessionUser(ctx context.Context, hash []byte, now time.Time) (store.User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.handle, u.is_admin, u.retention, u.created_at
+// SessionUser also records that the session was seen, at most once a
+// minute.
+func (s *DB) SessionUser(ctx context.Context, hash []byte, now time.Time) (store.User, store.Session, error) {
+	var u store.User
+	var se store.Session
+	var ret, ucreated, exp, created, seen int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT u.id, u.username, u.handle, u.is_admin, u.retention, u.created_at,
+			s.id, s.expires_at, s.created_at, s.last_seen, s.label
 		FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.hash = ? AND s.expires_at > ?`, hash, ts(now)))
+		WHERE s.hash = ? AND s.expires_at > ?`, hash, ts(now)).Scan(
+		&u.ID, &u.Username, &u.Handle, &u.IsAdmin, &ret, &ucreated,
+		&se.ID, &exp, &created, &seen, &se.Label)
+	if err != nil {
+		return u, se, one(err)
+	}
+	u.Retention, u.CreatedAt = time.Duration(ret)*time.Second, tm(ucreated)
+	se.UserID, se.ExpiresAt, se.CreatedAt, se.LastSeen = u.ID, tm(exp), tm(created), tm(seen)
+	if now.Sub(se.LastSeen) > time.Minute {
+		s.db.ExecContext(ctx, `UPDATE sessions SET last_seen = ? WHERE id = ?`, ts(now), se.ID)
+		se.LastSeen = now
+	}
+	return u, se, nil
+}
+
+func (s *DB) ListSessions(ctx context.Context, userID int64, now time.Time) ([]store.Session, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, expires_at, created_at, last_seen, label FROM sessions
+		WHERE user_id = ? AND expires_at > ? ORDER BY last_seen DESC, id DESC`, userID, ts(now))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Session
+	for rows.Next() {
+		se := store.Session{UserID: userID}
+		var exp, created, seen int64
+		if err := rows.Scan(&se.ID, &exp, &created, &seen, &se.Label); err != nil {
+			return nil, err
+		}
+		se.ExpiresAt, se.CreatedAt, se.LastSeen = tm(exp), tm(created), tm(seen)
+		out = append(out, se)
+	}
+	return out, rows.Err()
 }
 
 func (s *DB) DeleteSession(ctx context.Context, hash []byte) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE hash = ?`, hash)
 	return err
+}
+
+func (s *DB) DeleteSessionByID(ctx context.Context, userID, id int64) error {
+	return changed(s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ? AND user_id = ?`, id, userID))
 }
 
 // --- devices ---
@@ -427,14 +582,23 @@ func (s *DB) DeviceByAccess(ctx context.Context, hash []byte, now time.Time) (st
 	return d, err
 }
 
-func (s *DB) DeviceByRefresh(ctx context.Context, hash []byte) (store.Device, error) {
-	return scanDevice(s.db.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices WHERE refresh_hash = ?`, hash))
+// refreshLeeway is how long a device's previous refresh token still works
+// after it has been rotated.
+const refreshLeeway = time.Minute
+
+func (s *DB) DeviceByRefresh(ctx context.Context, hash []byte, now time.Time) (store.Device, error) {
+	return scanDevice(s.db.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices
+		WHERE refresh_hash = ? OR (prev_refresh_hash = ? AND rotated_at > ?)`,
+		hash, hash, ts(now.Add(-refreshLeeway))))
 }
 
-func (s *DB) RotateDevice(ctx context.Context, d store.Device) error {
+// RotateDevice stores new tokens, remembering prevRefresh for the leeway.
+func (s *DB) RotateDevice(ctx context.Context, d store.Device, prevRefresh []byte) error {
+	now := time.Now()
 	return changed(s.db.ExecContext(ctx, `
-		UPDATE devices SET access_hash = ?, refresh_hash = ?, access_expires = ?, last_seen = ? WHERE id = ?`,
-		d.AccessHash, d.RefreshHash, ts(d.AccessExpires), ts(time.Now()), d.ID))
+		UPDATE devices SET access_hash = ?, refresh_hash = ?, access_expires = ?, last_seen = ?,
+			prev_refresh_hash = ?, rotated_at = ? WHERE id = ?`,
+		d.AccessHash, d.RefreshHash, ts(d.AccessExpires), ts(now), prevRefresh, ts(now), d.ID))
 }
 
 func (s *DB) ListDevices(ctx context.Context, userID int64) ([]store.Device, error) {
@@ -559,6 +723,10 @@ func (s *DB) Stats(ctx context.Context) (store.Stats, error) {
 			(SELECT COUNT(*) FROM corrections), (SELECT MAX(received_at) FROM messages)`).Scan(
 		&st.Users, &st.Messages, &st.Corrections, &last)
 	st.LastMessage = tm(last.Int64)
+	if s.pg {
+		s.db.QueryRowContext(ctx, `SELECT pg_database_size(current_database())`).Scan(&st.Bytes)
+		return st, err
+	}
 	for _, suffix := range []string{"", "-wal"} {
 		if fi, err := os.Stat(s.path + suffix); err == nil {
 			st.Bytes += fi.Size()

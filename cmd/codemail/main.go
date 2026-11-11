@@ -40,11 +40,16 @@ const usage = `usage: codemail <command> [flags]
   serve                         run the server
   domain add [flags] <domain>   add a shared domain from the command line
   recovery <username>           issue a one-time recovery code for a user
+  backup <file>                 write a consistent copy of the SQLite database
+  migrate-db -from A -to B      copy everything into another (empty) database
   extract <file|dir>...         run the extractor over .eml or mbox files
   markdown <file|dir>...        print messages as the Markdown that clients display
   train <dir>                   fit the extractor's weights on labelled mail
 
-serve, domain and recovery take -data <dir> (default ./data).
+serve, domain, recovery and backup take -data <dir> (default ./data) and
+-db <url>. The database is SQLite in the data directory unless -db (or the
+CODEMAIL_DB environment variable) gives a PostgreSQL URL such as
+postgres://user:password@host/codemail.
 `
 
 func main() {
@@ -64,6 +69,10 @@ func main() {
 		err = addDomain(args[1:])
 	case "recovery":
 		err = recovery(args)
+	case "backup":
+		err = backup(args)
+	case "migrate-db":
+		err = migrateDB(args)
 	case "extract":
 		err = extractFiles(args)
 	case "markdown":
@@ -80,16 +89,88 @@ func main() {
 	}
 }
 
-func openStore(dir string) (store.Store, error) {
+// dbFlag adds the -db flag, defaulting to the CODEMAIL_DB environment variable.
+func dbFlag(fl *flag.FlagSet) *string {
+	return fl.String("db", os.Getenv("CODEMAIL_DB"), "PostgreSQL URL; empty uses SQLite in the data directory")
+}
+
+// openDB opens a database named either by a PostgreSQL URL or by the path
+// of a SQLite file.
+func openDB(target string) (*sqlstore.DB, error) {
+	if strings.HasPrefix(target, "postgres://") || strings.HasPrefix(target, "postgresql://") {
+		return sqlstore.OpenPostgres(target)
+	}
+	return sqlstore.Open(target)
+}
+
+func openStore(dir, dbURL string) (*sqlstore.DB, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	if dbURL != "" {
+		return openDB(dbURL)
+	}
 	return sqlstore.Open(filepath.Join(dir, "codemail.db"))
+}
+
+// backup writes a snapshot of the SQLite database that is safe to take
+// while the server is running.
+func backup(args []string) error {
+	fl := flag.NewFlagSet("backup", flag.ExitOnError)
+	data := fl.String("data", "./data", "data directory")
+	dbURL := dbFlag(fl)
+	fl.Parse(args)
+	if fl.NArg() != 1 {
+		return fmt.Errorf("backup takes the file to write")
+	}
+	st, err := openStore(*data, *dbURL)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	return st.Backup(context.Background(), fl.Arg(0))
+}
+
+// migrateDB copies a whole database into another, empty one: SQLite to
+// PostgreSQL or back. Stop the server first.
+func migrateDB(args []string) error {
+	fl := flag.NewFlagSet("migrate-db", flag.ExitOnError)
+	from := fl.String("from", "", "source: a SQLite file or a PostgreSQL URL")
+	to := fl.String("to", "", "destination: a SQLite file or a PostgreSQL URL; must be empty")
+	fl.Parse(args)
+	if *from == "" || *to == "" {
+		return fmt.Errorf("migrate-db needs -from and -to")
+	}
+	if !strings.Contains(*from, "://") {
+		if _, err := os.Stat(*from); err != nil {
+			return fmt.Errorf("source: %w", err)
+		}
+	}
+	src, err := openDB(*from)
+	if err != nil {
+		return fmt.Errorf("source: %w", err)
+	}
+	defer src.Close()
+	dst, err := openDB(*to)
+	if err != nil {
+		return fmt.Errorf("destination: %w", err)
+	}
+	defer dst.Close()
+	if err := sqlstore.Copy(context.Background(), src, dst); err != nil {
+		return err
+	}
+	stats, err := dst.Stats(context.Background())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("copied %d users and %d messages\n", stats.Users, stats.Messages)
+	return nil
 }
 
 func serve(args []string) error {
 	fl := flag.NewFlagSet("serve", flag.ExitOnError)
 	data := fl.String("data", "./data", "data directory")
+	dbURL := dbFlag(fl)
 	hostname := fl.String("hostname", "", "public hostname of the web app, e.g. mail.example.com")
 	mailHost := fl.String("mail-host", "", "hostname that MX records point at, if different from -hostname")
 	smtpCert := fl.String("smtp-cert", "", "certificate file for SMTP STARTTLS with -behind-proxy (default: a self-signed one)")
@@ -117,7 +198,7 @@ func serve(args []string) error {
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	st, err := openStore(*data)
+	st, err := openStore(*data, *dbURL)
 	if err != nil {
 		return err
 	}
@@ -185,6 +266,7 @@ func serve(args []string) error {
 	smtpSrv := smtpd.NewServer(backend)
 	smtpSrv.Addr = *smtpAddr
 	go func() { errc <- smtpSrv.ListenAndServe() }()
+	log.Info("database", "kind", map[bool]string{true: "postgresql", false: "sqlite"}[st.Postgres()])
 	log.Info("listening", "smtp", *smtpAddr, "http", httpSrv.Addr, "origin", origin, "mail_host", *mailHost)
 
 	go func() {
@@ -224,6 +306,7 @@ func serve(args []string) error {
 func addDomain(args []string) error {
 	fl := flag.NewFlagSet("domain add", flag.ExitOnError)
 	data := fl.String("data", "./data", "data directory")
+	dbURL := dbFlag(fl)
 	mailbox := fl.Bool("mailbox", true, "allow username@domain")
 	aliases := fl.Bool("aliases", true, "allow claimed and generated aliases")
 	subdomains := fl.Bool("subdomains", true, "allow anything@username.domain")
@@ -232,7 +315,7 @@ func addDomain(args []string) error {
 	if fl.NArg() != 1 {
 		return fmt.Errorf("domain add takes one domain")
 	}
-	st, err := openStore(*data)
+	st, err := openStore(*data, *dbURL)
 	if err != nil {
 		return err
 	}
@@ -246,11 +329,12 @@ func addDomain(args []string) error {
 func recovery(args []string) error {
 	fl := flag.NewFlagSet("recovery", flag.ExitOnError)
 	data := fl.String("data", "./data", "data directory")
+	dbURL := dbFlag(fl)
 	fl.Parse(args)
 	if fl.NArg() != 1 {
 		return fmt.Errorf("recovery takes one username")
 	}
-	st, err := openStore(*data)
+	st, err := openStore(*data, *dbURL)
 	if err != nil {
 		return err
 	}
@@ -353,6 +437,56 @@ func extractFiles(args []string) error {
 	return nil
 }
 
+// loadCorrections reads the admin page's export: one JSON object per
+// correction, each carrying the message it applies to. A correction says
+// what the code or the link really is (or that there is none); the other
+// kind is left unknown unless it was corrected too.
+func loadCorrections(path string) ([]extract.Prepared, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	type correction struct {
+		MessageID int64 `json:"message_id"`
+		Kind      string
+		Value     string
+		Raw       []byte // base64 in the file
+	}
+	examples := map[int64]*extract.Example{}
+	var order []int64
+	dec := json.NewDecoder(f)
+	for dec.More() {
+		var c correction
+		if err := dec.Decode(&c); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		ex := examples[c.MessageID]
+		if ex == nil {
+			in, _ := mailmsg.Parse(c.Raw)
+			group := in.From
+			if a, err := mail.ParseAddress(in.From); err == nil {
+				group = a.Address[strings.LastIndexByte(a.Address, '@')+1:]
+			}
+			ex = &extract.Example{In: in, Code: extract.Unknown, Link: extract.Unknown, Group: strings.ToLower(group)}
+			examples[c.MessageID] = ex
+			order = append(order, c.MessageID)
+		}
+		// Later corrections of the same message replace earlier ones.
+		switch c.Kind {
+		case "code":
+			ex.Code = c.Value
+		case "link":
+			ex.Link = c.Value
+		}
+	}
+	out := make([]extract.Prepared, 0, len(order))
+	for _, id := range order {
+		out = append(out, extract.Prepare(*examples[id]))
+	}
+	return out, nil
+}
+
 // markdownFiles prints each message's Markdown rendering.
 func markdownFiles(args []string) error {
 	bodies, err := eachMessage(args, func(file string, _ int, in extract.Input, _ error) string {
@@ -376,6 +510,7 @@ func train(args []string) error {
 	fl := flag.NewFlagSet("train", flag.ExitOnError)
 	labelsPath := fl.String("labels", "corpus/labels.jsonl", "labels file")
 	out := fl.String("out", "internal/extract/weights.json", "where to write the trained weights")
+	correctionsPath := fl.String("corrections", "", "corrections exported from the admin page, to learn from as well")
 	evalOnly := fl.Bool("eval", false, "only measure the built-in model")
 	cv := fl.Bool("cv", true, "also estimate accuracy on unseen senders (slow)")
 	fl.Parse(args)
@@ -420,6 +555,15 @@ func train(args []string) error {
 	}
 	if len(used) != len(labels) {
 		return fmt.Errorf("%d labels name files that are not under %s", len(labels)-len(used), fl.Arg(0))
+	}
+
+	if *correctionsPath != "" {
+		corrected, err := loadCorrections(*correctionsPath)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%d corrected messages from %s\n", len(corrected), *correctionsPath)
+		data = append(data, corrected...)
 	}
 
 	report := func(name string, c, l extract.Metrics, cp, lp int) {

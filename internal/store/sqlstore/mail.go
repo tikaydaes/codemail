@@ -217,7 +217,7 @@ func (s *DB) Resolve(ctx context.Context, addr string) (store.Recipient, error) 
 		}
 		if local == "postmaster" {
 			var id int64
-			err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE is_admin = 1 ORDER BY id LIMIT 1`).Scan(&id)
+			err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE is_admin = ? ORDER BY id LIMIT 1`, true).Scan(&id)
 			if err == nil {
 				return store.Recipient{UserID: id}, nil
 			}
@@ -294,8 +294,9 @@ func (s *DB) ListMessages(ctx context.Context, q store.MessageQuery) ([]store.Me
 		where = append(where, `code = '' AND link = ''`)
 	}
 	if q.Search != "" {
-		like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q.Search) + "%"
-		where = append(where, `(service LIKE ? ESCAPE '\' OR subject LIKE ? ESCAPE '\' OR rcpt LIKE ? ESCAPE '\' OR code LIKE ? ESCAPE '\')`)
+		// Lower-cased on both sides: LIKE is case-sensitive on PostgreSQL.
+		like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(q.Search)) + "%"
+		where = append(where, `(LOWER(service) LIKE ? ESCAPE '\' OR LOWER(subject) LIKE ? ESCAPE '\' OR LOWER(rcpt) LIKE ? ESCAPE '\' OR LOWER(code) LIKE ? ESCAPE '\')`)
 		args = append(args, like, like, like, like)
 	}
 	order := `id DESC`
@@ -367,7 +368,8 @@ func (s *DB) CountMessagesSince(ctx context.Context, userID int64, since time.Ti
 func (s *DB) AddCorrection(ctx context.Context, c store.Correction) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO corrections (message_id, user_id, kind, value, raw, created_at)
-		SELECT id, user_id, ?, ?, raw, ? FROM messages WHERE id = ? AND user_id = ?`,
+		SELECT id, user_id, CAST(? AS TEXT), CAST(? AS TEXT), raw, CAST(? AS BIGINT)
+		FROM messages WHERE id = ? AND user_id = ?`,
 		c.Kind, c.Value, ts(time.Now()), c.MessageID, c.UserID)
 	return err
 }

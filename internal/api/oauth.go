@@ -170,16 +170,17 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		s.issueTokens(w, r, g)
 
 	case "refresh_token":
-		d, err := s.Store.DeviceByRefresh(ctx, hashToken(r.PostForm.Get("refresh_token")))
+		d, err := s.Store.DeviceByRefresh(ctx, hashToken(r.PostForm.Get("refresh_token")), time.Now())
 		if err != nil {
 			oauthError(w, "invalid_grant", "unknown refresh token")
 			return
 		}
+		previous := d.RefreshHash
 		access, refresh := "", ""
 		access, d.AccessHash = newToken()
 		refresh, d.RefreshHash = newToken()
 		d.AccessExpires = time.Now().Add(accessTTL)
-		if err := s.Store.RotateDevice(ctx, d); err != nil {
+		if err := s.Store.RotateDevice(ctx, d, previous); err != nil {
 			s.failErr(w, err)
 			return
 		}
@@ -215,7 +216,7 @@ func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	ctx := r.Context()
 	hash := hashToken(r.PostForm.Get("token"))
-	d, err := s.Store.DeviceByRefresh(ctx, hash)
+	d, err := s.Store.DeviceByRefresh(ctx, hash, time.Now())
 	if err != nil {
 		d, err = s.Store.DeviceByAccess(ctx, hash, time.Now())
 	}

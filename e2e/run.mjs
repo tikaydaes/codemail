@@ -136,6 +136,9 @@ await step('settings, sign out, sign in with passkey', async () => {
   await page.waitForTimeout(300);
   await page.goto(origin + '/#/settings');
   await page.getByRole('heading', { name: 'Passkeys' }).waitFor({ timeout: 5000 });
+  await page.getByRole('heading', { name: 'Signed-in browsers' }).waitFor();
+  await page.getByText('This browser').waitFor();
+  await page.getByText(/Chrome on (macOS|Linux|Windows)/).first().waitFor();
   await shot('09-settings');
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor({ timeout: 5000 });

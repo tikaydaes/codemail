@@ -490,3 +490,32 @@ func (s *Server) handleDeletePasskey(w http.ResponseWriter, r *http.Request, u s
 	}
 	ok(w, map[string]any{})
 }
+
+// --- signed-in browsers ---
+
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request, u store.User) {
+	_, current, _ := s.identifySession(r)
+	sessions, err := s.Store.ListSessions(r.Context(), u.ID, time.Now())
+	if err != nil {
+		s.failErr(w, err)
+		return
+	}
+	out := []map[string]any{}
+	for _, se := range sessions {
+		out = append(out, map[string]any{
+			"id": se.ID, "label": se.Label, "created_at": unix(se.CreatedAt), "last_seen": unix(se.LastSeen),
+			"current": current != nil && current.ID == se.ID,
+		})
+	}
+	ok(w, map[string]any{"sessions": out})
+}
+
+// handleDeleteSession signs another browser out.
+func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request, u store.User) {
+	if err := s.Store.DeleteSessionByID(r.Context(), u.ID, pathID(r)); err != nil {
+		s.failErr(w, err)
+		return
+	}
+	s.Store.Audit(r.Context(), u.ID, "revoke_session", r.PathValue("id"))
+	ok(w, map[string]any{})
+}

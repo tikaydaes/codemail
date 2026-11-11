@@ -66,6 +66,16 @@ type Passkey struct {
 	LastUsed  time.Time
 }
 
+// Session is one signed-in browser.
+type Session struct {
+	ID        int64
+	UserID    int64
+	Label     string // browser and system, from the User-Agent
+	CreatedAt time.Time
+	LastSeen  time.Time
+	ExpiresAt time.Time
+}
+
 // Device is a native app or extension holding OAuth tokens.
 type Device struct {
 	ID            int64
@@ -209,14 +219,18 @@ type Store interface {
 	AddRecoveryCode(ctx context.Context, userID int64, hash []byte) error
 	UseRecoveryCode(ctx context.Context, userID int64, hash []byte) (bool, error)
 
-	CreateSession(ctx context.Context, hash []byte, userID int64, expires time.Time) error
-	SessionUser(ctx context.Context, hash []byte, now time.Time) (User, error)
+	CreateSession(ctx context.Context, hash []byte, s *Session) error
+	SessionUser(ctx context.Context, hash []byte, now time.Time) (User, Session, error)
+	ListSessions(ctx context.Context, userID int64, now time.Time) ([]Session, error)
 	DeleteSession(ctx context.Context, hash []byte) error
+	DeleteSessionByID(ctx context.Context, userID, id int64) error
 
 	CreateDevice(ctx context.Context, d *Device) error
 	DeviceByAccess(ctx context.Context, hash []byte, now time.Time) (Device, error)
-	DeviceByRefresh(ctx context.Context, hash []byte) (Device, error)
-	RotateDevice(ctx context.Context, d Device) error
+	// DeviceByRefresh also accepts the device's previous refresh token for
+	// a short time after rotation.
+	DeviceByRefresh(ctx context.Context, hash []byte, now time.Time) (Device, error)
+	RotateDevice(ctx context.Context, d Device, prevRefresh []byte) error
 	ListDevices(ctx context.Context, userID int64) ([]Device, error)
 	DeleteDevice(ctx context.Context, userID, id int64) error
 

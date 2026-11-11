@@ -309,15 +309,17 @@ shows the domain it opens and whether that matches the sender.
 
 Built and tested:
 
-- Storage interface with the SQLite backend.
+- Storage interface with SQLite and PostgreSQL backends, `migrate-db` to
+  copy between them and `backup` for SQLite.
 - SMTP receiver: address resolution, per-address and per-user limits,
   generated-alias leak detection, extraction, expiry.
 - HTTP API (everything in section 8), passkey registration and sign-in,
-  recovery codes, sessions, the live event stream.
+  recovery codes, sessions (listed and revocable per browser), the live
+  event stream.
 - OAuth with PKCE, QR pairing, device list and revocation.
 - Domain claims with DNS verification and daily re-checks.
 - Admin: registration modes, invites, shared domains, users, policy,
-  corrections export.
+  corrections export, and `codemail train -corrections` to learn from it.
 - Web app: all screens in section 11.
 
 Tests: `go test ./...` covers the API end to end with a virtual passkey
@@ -342,8 +344,7 @@ Still to build, in order:
    to do: real-device testing, release signing, app icons, running the
    Android connection in the service itself so it survives the app being
    swiped away.
-4. PostgreSQL backend, `migrate-db`, `backup`.
-5. Ongoing: corrections loop into training, link recall, promo codes.
+4. Ongoing: link recall, promo codes.
 
 ## 15. Risks
 

@@ -176,7 +176,7 @@ export async function devicesView() {
 // --- settings ---
 
 export async function settingsView() {
-  const { passkeys } = await api('GET', '/api/v1/passkeys');
+  const [{ passkeys }, { sessions }] = await Promise.all([api('GET', '/api/v1/passkeys'), api('GET', '/api/v1/sessions')]);
   const limits = state.limits;
   const options = [[0, `Server default (${limits.default_retention_hours / 24} days)`], [1, '1 hour'], [24, '1 day'], [72, '3 days'], [168, '7 days'], [336, '14 days'], [720, '30 days']]
     .filter(([hrs]) => hrs <= limits.max_retention_hours);
@@ -207,6 +207,24 @@ export async function settingsView() {
           reload();
         });
       } }, field('Name for the new passkey', keyName), h('button', { type: 'submit' }, 'Add a passkey'))),
+
+    h('section', { class: 'card' }, h('h2', {}, 'Signed-in browsers'),
+      h('p', { class: 'muted small' }, 'Browsers signed in to your account with a passkey. Apps and extensions are listed under Devices.'),
+      h('div', { class: 'tablebox' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Browser'), h('th', {}, 'Signed in'), h('th', {}, 'Last active'), h('th', {}, h('span', { hidden: true }, 'Actions')))),
+        h('tbody', {}, sessions.map((se) => h('tr', {},
+          h('td', { class: 'title' }, se.label || 'Unknown browser', se.current ? h('span', { class: 'pill ok', style: 'margin-left:8px' }, 'This browser') : null),
+          h('td', { class: 'muted' }, se.created_at ? day(se.created_at) : 'Before this was recorded'),
+          h('td', { class: 'muted' }, se.last_seen ? ago(se.last_seen) : 'Unknown'),
+          h('td', { class: 'actions' }, se.current ? null : h('button', { class: 'danger', type: 'button', onclick: () => act(async () => {
+            await api('DELETE', `/api/v1/sessions/${se.id}`);
+            toast('That browser has been signed out');
+            reload();
+          }) }, 'Sign out'))))))),
+      sessions.length > 1 && h('button', { type: 'button', style: 'align-self:flex-start', onclick: () => confirm('Sign out every other browser?') && act(async () => {
+        for (const se of sessions) if (!se.current) await api('DELETE', `/api/v1/sessions/${se.id}`);
+        reload();
+      }) }, 'Sign out all other browsers')),
 
     h('section', { class: 'card' }, h('h2', {}, 'Recovery codes'),
       h('p', { class: 'muted small' }, 'Recovery codes sign you in if you lose every passkey. Making new ones cancels the old ones.'),

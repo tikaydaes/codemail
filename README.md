@@ -113,8 +113,39 @@ ordinary mailboxes.
 
 ## Backup and upgrade
 
-All state is in the data directory. Stop the server and copy it to back
-up. To upgrade, replace the binary; the database is migrated on start.
+All state is in the data directory. To back up while the server is
+running:
+
+    ./codemail backup -data /var/lib/codemail /backups/codemail-$(date +%F).db
+
+writes a consistent copy of the database. To upgrade, replace the binary;
+the database is migrated on start.
+
+## PostgreSQL (optional)
+
+Codemail uses an embedded SQLite database by default and needs nothing
+else. If you would rather use PostgreSQL, give its URL with `-db` or the
+`CODEMAIL_DB` environment variable:
+
+    ./codemail serve -hostname mail.example.com -db postgres://codemail:secret@localhost/codemail
+
+To move an existing installation, stop the server and copy the data into
+an empty PostgreSQL database (or back again):
+
+    ./codemail migrate-db -from /var/lib/codemail/codemail.db -to postgres://codemail:secret@localhost/codemail
+
+Back PostgreSQL up with `pg_dump`. The data directory is still used for
+certificates.
+
+## Improving extraction from corrections
+
+When a user clicks "Wrong code?" and corrects a message, the correction
+is stored. An admin can download them from the Admin page and train on
+them alongside labelled mail:
+
+    ./codemail train -corrections corrections.jsonl <mail directory>
+
+This writes new weights into the source tree; rebuild to use them.
 
 If you are locked out with shell access to the server:
 
