@@ -84,8 +84,23 @@ Start it:
     ./codemail serve -hostname mail.example.com -data /var/lib/codemail
 
 Codemail obtains and renews its own certificate from Let's Encrypt and
-uses it for both HTTPS and SMTP. To put it behind your own reverse proxy
-instead, add `-behind-proxy` and proxy HTTPS to its `-http` port.
+uses it for both HTTPS and SMTP.
+
+### Behind a reverse proxy, with Docker
+
+If a reverse proxy already serves HTTPS on the machine, run Codemail with
+`-behind-proxy`. It then serves plain HTTP on its `-http` address for the
+proxy, trusts the proxy's `X-Real-IP` header, and encrypts SMTP with a
+self-signed certificate it creates itself (or one you pass with
+`-smtp-cert` and `-smtp-key`). Mail servers encrypt opportunistically
+and do not check the certificate.
+
+If mail is delivered to a different name from the web address (for
+example the web address goes through a CDN), give that name with
+`-mail-host`; it is what MX records must point at.
+
+`deploy/docker-compose.yml` is a ready-made setup for this. Images are
+published to `ghcr.io/tikaydaes/codemail`.
 
 Then open `https://mail.example.com`, follow the setup link from the log,
 and add `example.com` as a shared domain under Admin.

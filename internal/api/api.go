@@ -32,6 +32,7 @@ type Config struct {
 	Origin           string        // public base URL, e.g. https://mail.example.com
 	MailHost         string        // hostname that MX records must point at
 	DefaultRetention time.Duration // used when neither user nor admin set one
+	TrustProxy       bool          // a reverse proxy in front sets X-Real-IP / X-Forwarded-For
 }
 
 type Server struct {
@@ -314,11 +315,27 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, userID int
 	return nil
 }
 
+// clientIP is the address of whoever made the request. Behind a reverse
+// proxy every connection comes from the proxy, so its headers are used;
+// without one they are ignored, since any client could forge them.
+func (s *Server) clientIP(r *http.Request) string {
+	if s.cfg.TrustProxy {
+		if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
+			return ip
+		}
+		if first, _, _ := strings.Cut(r.Header.Get("X-Forwarded-For"), ","); strings.TrimSpace(first) != "" {
+			return strings.TrimSpace(first)
+		}
+	}
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return ip
+}
+
 // limited allows each client address 20 calls a minute, to slow guessing
 // of recovery codes, invite codes and pairing codes.
 func (s *Server) limited(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip := s.clientIP(r)
 		now := time.Now()
 		s.mu.Lock()
 		if len(s.attempts) > 10000 {

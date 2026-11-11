@@ -1,0 +1,28 @@
+# Codemail behind a reverse proxy that provides HTTPS.
+#
+# Set CODEMAIL_HOSTNAME (the web address) and, if mail is delivered to a
+# different name, CODEMAIL_MAIL_HOST, in a .env file beside this one.
+# Point the proxy at 127.0.0.1:8260 and have it pass X-Real-IP.
+#
+# Host networking is used so Codemail sees the real address of each
+# sending mail server, which sender checks (SPF) and rate limits need.
+services:
+  codemail:
+    image: ghcr.io/tikaydaes/codemail:latest
+    container_name: codemail
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - serve
+      - -data=/data
+      - -behind-proxy
+      - -hostname=${CODEMAIL_HOSTNAME:?set CODEMAIL_HOSTNAME in .env}
+      - -mail-host=${CODEMAIL_MAIL_HOST:-}
+      - -http=127.0.0.1:8260
+      - -smtp=:25
+    volumes:
+      - ./data:/data
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE] # port 25
+    security_opt: ["no-new-privileges:true"]

@@ -1,0 +1,6 @@
+.git
+corpus
+data
+e2e
+*.eml
+*.mbox

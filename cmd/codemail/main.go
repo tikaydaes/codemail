@@ -90,7 +90,10 @@ func openStore(dir string) (store.Store, error) {
 func serve(args []string) error {
 	fl := flag.NewFlagSet("serve", flag.ExitOnError)
 	data := fl.String("data", "./data", "data directory")
-	hostname := fl.String("hostname", "", "public hostname of this server, e.g. mail.example.com")
+	hostname := fl.String("hostname", "", "public hostname of the web app, e.g. mail.example.com")
+	mailHost := fl.String("mail-host", "", "hostname that MX records point at, if different from -hostname")
+	smtpCert := fl.String("smtp-cert", "", "certificate file for SMTP STARTTLS with -behind-proxy (default: a self-signed one)")
+	smtpKey := fl.String("smtp-key", "", "key file for -smtp-cert")
 	smtpAddr := fl.String("smtp", ":25", "SMTP listen address")
 	httpAddr := fl.String("http", ":8080", "HTTP listen address, used with -dev or -behind-proxy")
 	behindProxy := fl.Bool("behind-proxy", false, "serve plain HTTP on -http; a proxy in front provides HTTPS")
@@ -108,6 +111,9 @@ func serve(args []string) error {
 	} else if *hostname == "" {
 		return fmt.Errorf("serve needs -hostname (or -dev for local use)")
 	}
+	if *mailHost == "" {
+		*mailHost = *hostname
+	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	st, err := openStore(*data)
@@ -120,7 +126,7 @@ func serve(args []string) error {
 	defer stop()
 
 	h := hub.New()
-	apiSrv, err := api.New(api.Config{Origin: origin, MailHost: *hostname, DefaultRetention: *retention},
+	apiSrv, err := api.New(api.Config{Origin: origin, MailHost: *mailHost, DefaultRetention: *retention, TrustProxy: *behindProxy},
 		st, h, extract.Default, web.Files(), log)
 	if err != nil {
 		return err
@@ -133,7 +139,7 @@ func serve(args []string) error {
 
 	backend := &smtpd.Backend{
 		Store: st, Hub: h, Model: extract.Default, Log: log,
-		Cfg: smtpd.Config{Hostname: *hostname, Retention: *retention, MaxBytes: *maxBytes, PerIPRate: 60, DailyLimit: 2000},
+		Cfg: smtpd.Config{Hostname: *mailHost, Retention: *retention, MaxBytes: *maxBytes, PerIPRate: 60, DailyLimit: 2000},
 	}
 	httpSrv := &http.Server{Addr: *httpAddr, Handler: apiSrv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 3)
@@ -142,20 +148,28 @@ func serve(args []string) error {
 	case *dev:
 		go func() { errc <- httpSrv.ListenAndServe() }()
 	case *behindProxy:
+		// The proxy holds the web certificate, so SMTP needs its own.
+		// Mail servers encrypt opportunistically and do not check the
+		// certificate, so a self-signed one still protects mail in transit.
+		cert, err := smtpCertificate(*smtpCert, *smtpKey, *data, *mailHost)
+		if err != nil {
+			return err
+		}
 		backend.Auth = mailauth.DNS{}
+		backend.Cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
 		go func() { errc <- httpSrv.ListenAndServe() }()
 	default:
 		// Certificates for the hostname come from Let's Encrypt and are
 		// shared by HTTPS and SMTP STARTTLS.
 		certs := &autocert.Manager{
 			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(*hostname),
+			HostPolicy: autocert.HostWhitelist(*hostname, *mailHost),
 			Cache:      autocert.DirCache(filepath.Join(*data, "certs")),
 		}
 		backend.Auth = mailauth.DNS{}
 		backend.Cfg.TLS = &tls.Config{GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			if hello.ServerName == "" {
-				hello.ServerName = *hostname // SMTP clients often send no name
+				hello.ServerName = *mailHost // SMTP clients often send no name
 			}
 			return certs.GetCertificate(hello)
 		}}
@@ -167,7 +181,7 @@ func serve(args []string) error {
 	smtpSrv := smtpd.NewServer(backend)
 	smtpSrv.Addr = *smtpAddr
 	go func() { errc <- smtpSrv.ListenAndServe() }()
-	log.Info("listening", "smtp", *smtpAddr, "http", httpSrv.Addr, "origin", origin)
+	log.Info("listening", "smtp", *smtpAddr, "http", httpSrv.Addr, "origin", origin, "mail_host", *mailHost)
 
 	go func() {
 		hourly := time.NewTicker(time.Hour)
