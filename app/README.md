@@ -15,8 +15,8 @@ build contains no Google libraries, so it is suitable for F-Droid.
     flutter build apk          # or: linux, windows, macos, ios --no-codesign
 
 Android needs a JDK 17 and the Android SDK. iOS and macOS need Xcode.
-Linux needs GTK 3, libsecret and Ayatana AppIndicator development
-packages (see `.github/workflows/apps.yml` for the exact list).
+Linux needs GTK 3, WebKitGTK 4.1, libsecret and Ayatana AppIndicator
+development packages (see `.github/workflows/apps.yml` for the exact list).
 
 ## How it connects
 
