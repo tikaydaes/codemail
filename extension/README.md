@@ -66,7 +66,10 @@ unsigned extensions"; and enable Codemail under Settings, Extensions.
 Safari turns "Allow unsigned extensions" off again every time it quits,
 so this is for trying it out. A version that stays installed must be
 signed with an Apple Developer ID and notarised, which needs Apple's paid
-developer programme. The Safari build has not been tested in Safari yet.
+developer programme. Safari also asks, per website, whether the extension
+may act there; choose "Always Allow on Every Website" for codes to be
+offered everywhere. The build installs and enables in Safari 27; signing
+in and filling codes there have not been checked yet.
 
 ## Connect
 
