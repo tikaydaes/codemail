@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -44,14 +45,21 @@ func (s *Server) handleOAuthMetadata(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// returnPath is a page on this server that browser extensions use as
+// their redirect: the extension watches for the tab arriving there.
+const returnPath = "/oauth/return"
+
 // redirectAllowed limits where an authorization code may be sent: back to
 // an app on this machine, to a browser extension, or to the mobile apps.
 // Clients are public and unregistered, so this is what stops a web page
 // from collecting codes.
-func redirectAllowed(raw string) bool {
+func (s *Server) redirectAllowed(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Fragment != "" {
 		return false
+	}
+	if raw == s.cfg.Origin+returnPath {
+		return true
 	}
 	host := u.Hostname()
 	switch u.Scheme {
@@ -80,7 +88,7 @@ func (s *Server) handleOAuthApprove(w http.ResponseWriter, r *http.Request, u st
 	if !decode(w, r, &body) {
 		return
 	}
-	if !redirectAllowed(body.RedirectURI) {
+	if !s.redirectAllowed(body.RedirectURI) {
 		fail(w, http.StatusBadRequest, "this app's return address is not allowed")
 		return
 	}
@@ -209,6 +217,19 @@ func tokenReply(w http.ResponseWriter, access, refresh string) {
 		"access_token": access, "refresh_token": refresh,
 		"token_type": "Bearer", "expires_in": int(accessTTL / time.Second),
 	})
+}
+
+// handleOAuthReturn is where a browser extension's sign-in ends. The page
+// itself does nothing: the extension reads the code from the address and
+// closes the tab. It only stays visible if the extension is not there.
+func (s *Server) handleOAuthReturn(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	io.WriteString(w, `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codemail</title><body style="font-family:system-ui,sans-serif;padding:48px 24px;text-align:center;color-scheme:light dark">
+<h1 style="font-size:22px">Almost done</h1>
+<p>The Codemail extension is finishing the connection. This tab will close by itself.</p>
+<p style="color:#777">If it stays open, the extension is not running in this browser. You can close the tab.</p>`)
 }
 
 // handleOAuthRevoke signs a device out. Either of its tokens identifies it.

@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+a+"/oauth/approve", s.session(s.handleOAuthApprove))
 	mux.HandleFunc("POST /oauth/token", s.limited(s.handleOAuthToken))
 	mux.HandleFunc("POST /oauth/revoke", s.handleOAuthRevoke)
+	mux.HandleFunc("GET "+returnPath, s.handleOAuthReturn)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.handleOAuthMetadata)
 
 	mux.HandleFunc("GET "+a+"/admin/status", s.admin(s.handleAdminStatus))

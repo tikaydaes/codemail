@@ -222,7 +222,7 @@ All under `/api/v1`, JSON, authenticated by session cookie or
 |-----------|-------------------------------------|-------------------------------|
 | Web       | Plain HTML, CSS and JavaScript modules, embedded in the binary | Everything, including admin and account management |
 | Apps      | Flutter, one codebase in `app/` for Android, iOS, macOS, Windows and Linux | Codes, messages, addresses, notifications; tray and auto-copy on desktop; background service on Android |
-| Extension | WebExtension in `extension/` (Chromium browsers, Firefox) | Offer codes in sign-in fields |
+| Extension | WebExtension in `extension/` (Chromium browsers, Firefox, Safari) | Offer codes in sign-in fields |
 
 **Distribution.** No main app stores. Apps are downloads attached to
 GitHub releases; the Android app carries no Google libraries so it can go
@@ -339,8 +339,8 @@ Differences from the plan above:
 
 Still to build, in order:
 
-1. Browser extension: built for Chromium browsers and Firefox in
-   `extension/` (see its README). Safari is not supported yet.
+1. Browser extension: built for Chromium browsers, Firefox and Safari in
+   `extension/` (see its README). The Safari build is untested in Safari.
 2. First real deployment; verify certificates and sender checks.
 3. Apps: a first Flutter version exists in `app/` (see its README). Still
    to do: real-device testing and release signing.

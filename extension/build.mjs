@@ -1,6 +1,6 @@
-// Packages the extension for Chromium browsers and for Firefox.
+// Packages the extension for Chromium browsers, Firefox and Safari.
 //
-//   node build.mjs          -> dist/chrome, dist/firefox and a zip of each
+//   node build.mjs          -> dist/chrome, dist/firefox, dist/safari and a zip of each
 //   node build.mjs --dev    -> also allows http://localhost, for testing
 //
 // The two differ only in the manifest: Chromium wants a service worker,
@@ -16,7 +16,7 @@ const targets = {
   chrome: base,
   firefox: {
     ...base,
-    background: { scripts: ['background.js'], type: 'module' },
+    background: { scripts: ['background.js'] },
     browser_specific_settings: {
       gecko: {
         id: 'codemail@tikaydaes.github.io',
@@ -31,6 +31,13 @@ const targets = {
     },
   },
 };
+
+// Safari takes the Chromium form of the manifest. dist/safari is the input
+// to Apple's converter, which wraps it in the app Safari requires:
+//   xcrun safari-web-extension-converter dist/safari --project-location dist/safari-xcode \
+//     --app-name Codemail --bundle-identifier io.github.tikaydaes.codemail.safari \
+//     --macos-only --no-open --no-prompt --force
+targets.safari = base;
 
 fs.rmSync('dist', { recursive: true, force: true });
 for (const [name, manifest] of Object.entries(targets)) {

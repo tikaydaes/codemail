@@ -14,7 +14,7 @@ class Disconnected extends Error {
 const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const random = (n) => b64u(crypto.getRandomValues(new Uint8Array(n)));
 
-export function normalizeServer(input) {
+function normalizeServer(input) {
   let s = (input || '').trim();
   if (!s || /\s/.test(s)) return null;
   if (!s.includes('://')) s = 'https://' + s;
@@ -56,33 +56,56 @@ async function connect(serverInput) {
     throw new Error(`${server} does not look like a Codemail server.`);
   }
 
-  // OAuth with PKCE: the browser shows the server's own sign-in page, the
-  // user approves this extension there, and a one-time code comes back.
+  // OAuth with PKCE, in an ordinary tab: the user signs in on their own
+  // server and approves this extension, and the server sends the tab to
+  // its /oauth/return page with a one-time code. finishConnect picks that
+  // up. What is needed to finish is saved first, because the browser may
+  // stop this worker while the user is signing in.
   const verifier = random(48);
   const challenge = b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   const state = random(16);
-  const redirect = api.identity.getRedirectURL('oauth');
-  const browserName = navigator.userAgent.includes('Firefox') ? 'Firefox' : 'Browser';
-  const url = server + '/oauth/authorize?' + new URLSearchParams({
-    response_type: 'code', client_id: 'codemail-extension', redirect_uri: redirect,
-    code_challenge: challenge, code_challenge_method: 'S256', state,
-    device_name: `${browserName} extension`, platform: 'browser',
+  const redirect = server + '/oauth/return';
+  const ua = navigator.userAgent;
+  const browserName = ua.includes('Firefox') ? 'Firefox' : ua.includes('Edg/') ? 'Edge' : ua.includes('Chrome') ? 'Chrome' : ua.includes('Safari') ? 'Safari' : 'Browser';
+  await store.set({ pending: { server, verifier, state, redirect, at: Date.now() } });
+  await api.tabs.create({
+    url: server + '/oauth/authorize?' + new URLSearchParams({
+      response_type: 'code', client_id: 'codemail-extension', redirect_uri: redirect,
+      code_challenge: challenge, code_challenge_method: 'S256', state,
+      device_name: `${browserName} extension`, platform: 'browser',
+    }),
   });
-  let returned;
-  try {
-    returned = new URL(await api.identity.launchWebAuthFlow({ url, interactive: true }));
-  } catch {
-    throw new Error('Sign-in was cancelled.');
-  }
-  if (returned.searchParams.get('error')) throw new Error('Access was denied.');
-  const code = returned.searchParams.get('code');
-  if (!code || returned.searchParams.get('state') !== state) throw new Error('The sign-in returned an unexpected reply.');
-
-  const tokens = await postToken(server, { grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: redirect });
-  await saveTokens(server, tokens);
-  const me = await call('GET', '/api/v1/me');
-  await store.set({ username: me.user.username });
 }
+
+// Completes a connection when a tab reaches the server's return page.
+async function finishConnect(tabId, url) {
+  const { pending } = await store.get('pending');
+  if (!pending || !url.startsWith(pending.redirect + '?')) return;
+  const params = new URL(url).searchParams;
+  await store.remove('pending');
+  api.tabs.remove(tabId).catch(() => {});
+  if (Date.now() - pending.at > 10 * 60 * 1000) return fail('That sign-in took too long. Connect again.');
+  if (params.get('error')) return fail('Access was denied.');
+  const code = params.get('code');
+  if (!code || params.get('state') !== pending.state) return fail('The sign-in returned an unexpected reply.');
+  try {
+    const tokens = await postToken(pending.server, { grant_type: 'authorization_code', code, code_verifier: pending.verifier, redirect_uri: pending.redirect });
+    await saveTokens(pending.server, tokens, { connectError: '' });
+    const me = await call('GET', '/api/v1/me');
+    await store.set({ username: me.user.username });
+    updateBadge();
+  } catch (err) {
+    await fail(err.message);
+  }
+}
+
+// The popup shows this the next time it opens.
+const fail = (message) => store.set({ connectError: message });
+
+api.tabs.onUpdated.addListener((tabId, change, tab) => {
+  const url = change.url || (change.status === 'complete' ? tab.url : '');
+  if (url) finishConnect(tabId, url);
+});
 
 async function disconnect() {
   const s = await store.get(['server', 'refresh']);
@@ -161,10 +184,18 @@ api.runtime.onStartup.addListener(updateBadge);
 
 const handlers = {
   async status() {
-    const s = await store.get(['server', 'username']);
-    return { connected: !!s.server, server: s.server || '', username: s.username || '' };
+    const s = await store.get(['server', 'access', 'username', 'pending', 'connectError']);
+    if (s.connectError) await store.remove('connectError');
+    if (s.access && !s.username) {
+      // The popup can open just before the name is saved.
+      try {
+        s.username = (await call('GET', '/api/v1/me')).user.username;
+        await store.set({ username: s.username });
+      } catch { /* shown without a name */ }
+    }
+    return { connected: !!s.access, server: s.server || '', username: s.username || '', waiting: !!s.pending, error: s.connectError || '' };
   },
-  connect: (m) => connect(m.server).then(updateBadge).then(() => ({})),
+  connect: (m) => connect(m.server).then(() => ({})),
   disconnect: () => disconnect().then(updateBadge).then(() => ({})),
   // Codes received in the last few minutes, each marked with whether it
   // may be offered on the given site.

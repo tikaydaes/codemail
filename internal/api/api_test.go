@@ -487,6 +487,15 @@ func TestEverything(t *testing.T) {
 	if status, _ := approve("https://evil.example/cb"); status != 400 {
 		t.Errorf("approving a web redirect = %d, want 400", status)
 	}
+	// Extensions return to a fixed page on this server. (Other pages on a
+	// real server are refused, but this test server is on localhost, which
+	// is allowed as a redirect for desktop apps.)
+	if status, _ := approve(origin + "/oauth/return"); status != 200 {
+		t.Errorf("approving the server's own return page = %d, want 200", status)
+	}
+	if resp, err := http.Get(origin + "/oauth/return?code=x"); err != nil || resp.StatusCode != 200 {
+		t.Errorf("GET /oauth/return = %v, %v", resp, err)
+	}
 	redirect := "http://127.0.0.1:53124/callback"
 	code := func() string {
 		status, out := approve(redirect)

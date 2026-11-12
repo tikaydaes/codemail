@@ -3,7 +3,6 @@
 //   node extension.mjs <setup-url>
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,17 +56,37 @@ await step('create account and connect the extension', async () => {
   await page.getByLabel('Domain', { exact: true }).fill('codes.example');
   await page.getByRole('button', { name: 'Add shared domain' }).click();
   await page.getByText('username@codes.example, with +tags').waitFor();
-  // The browser's own sign-in window cannot be driven from a test, so the
-  // approval and code exchange are done directly, as the extension would.
-  const verifier = crypto.randomBytes(48).toString('base64url');
-  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-  const redirect = `https://${extensionId}.chromiumapp.org/oauth`;
-  const approved = await page.evaluate(async (body) => (await fetch('/api/v1/oauth/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json(),
-    { client_id: 'codemail-extension', redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', state: 's', device_name: 'Browser extension', platform: 'browser' });
-  const code = new URL(approved.redirect).searchParams.get('code');
-  tokens = await (await fetch(origin + '/oauth/token', { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: redirect }) })).json();
-  if (!tokens.access_token) throw new Error('no tokens: ' + JSON.stringify(tokens));
-  await worker.evaluate(({ server, t }) => chrome.storage.local.set({ server, access: t.access_token, refresh: t.refresh_token, expires: Date.now() + 3600e3, username: 'kaity' }), { server: origin, t: tokens });
+  // Connect the way a user does: enter the server in the popup, approve
+  // on the server's page in the tab that opens, and let the extension
+  // pick up the result.
+  const popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  await popup.getByLabel('Server address').fill(origin);
+  const approval = ctx.waitForEvent('page', { timeout: 10000 }).catch(async () => {
+    throw new Error('no sign-in tab opened; popup says: ' + (await popup.locator('main').innerText()).replace(/\n+/g, ' | '));
+  });
+  await popup.getByRole('button', { name: 'Connect' }).click();
+  const tab = await approval;
+  if (process.env.DEBUG_EXT) console.log('TAB', tab.url());
+  await tab.getByRole('heading', { name: 'Connect a device' }).waitFor({ timeout: 10000 }).catch(async (e) => {
+    throw new Error('approval page shows: ' + (await tab.locator('body').innerText()).replace(/\n+/g, ' | ').slice(0, 200));
+  });
+  await tab.getByText('Chrome extension').waitFor();
+  const closed = tab.waitForEvent('close', { timeout: 10000 });
+  await tab.getByRole('button', { name: 'Allow' }).click();
+  await closed; // the extension closes the tab once it has the code
+  await popup.reload();
+  if (process.env.DEBUG_EXT) {
+    await popup.waitForTimeout(1500);
+    console.log('POPUP', (await popup.locator('body').innerText()).replace(/\n+/g, ' | '));
+    console.log('STORE', JSON.stringify(await (ctx.serviceWorkers()[0] ?? worker).evaluate(() => chrome.storage.local.get(null))).slice(0, 300));
+  }
+  await popup.getByText('kaity').waitFor({ timeout: 10000 });
+  await popup.getByRole('button', { name: 'Disconnect' }).waitFor();
+  await popup.close();
+  const saved = await (ctx.serviceWorkers()[0] ?? worker).evaluate(() => chrome.storage.local.get(['access', 'refresh', 'pending']));
+  if (!saved.access || saved.pending) throw new Error('the extension did not finish connecting');
+  tokens = { access_token: saved.access, refresh_token: saved.refresh };
 });
 
 await step('offers and fills a code on the sender\'s own site', async () => {

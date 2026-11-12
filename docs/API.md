@@ -83,7 +83,8 @@ flow with PKCE (S256). The server publishes its endpoints at
 
 1. Open `/oauth/authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…&device_name=…&platform=…`
    in a browser. Allowed redirects: `http://127.0.0.1` or `localhost` on
-   any port, `codemail://…`, and the browsers' extension redirect hosts.
+   any port, `codemail://…`, and the server's own `/oauth/return` page,
+   which browser extensions use (they watch for the tab arriving there).
 2. The user signs in and approves; the browser returns to the redirect
    with `code` and `state` (or `error=access_denied`).
 3. `POST /oauth/token` (form-encoded) with

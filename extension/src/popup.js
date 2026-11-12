@@ -63,10 +63,11 @@ function connectView(error) {
       return;
     }
     status.className = 'muted';
-    status.textContent = 'Waiting for you to sign in…';
+    status.textContent = 'Opening your server so you can sign in and approve this extension…';
     try {
+      // This opens a tab, which closes the popup; the connection is
+      // finished in the background and shown next time the popup opens.
       await ask({ type: 'connect', server: origin });
-      render();
     } catch (err) {
       status.className = 'error';
       status.textContent = err.message;
@@ -113,7 +114,9 @@ async function render() {
     return connectView(err.message);
   }
   document.getElementById('who').textContent = status.connected ? status.username : '';
-  if (!status.connected) return connectView();
+  if (!status.connected) {
+    return connectView(status.error || (status.waiting ? 'Finish signing in on the tab that opened, then open this again.' : ''));
+  }
 
   const site = await currentSite();
   try {
