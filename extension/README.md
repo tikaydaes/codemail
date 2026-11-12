@@ -83,4 +83,5 @@ exchanges for tokens.
 
 `e2e/extension.sh` loads the extension into Chromium against a local
 server and checks connecting, filling, six-box fields, the unrelated-site
-refusal, confirmation links, the badge and the popup.
+refusal, confirmation links, the badge and the popup. `e2e/firefox.sh`
+runs the same checks in an installed Firefox, with a temporary profile.

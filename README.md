@@ -158,6 +158,7 @@ prints a one-time recovery code.
     go test ./...        # API and conversion tests
     e2e/run.sh           # drives the web app in a headless browser
     e2e/extension.sh     # tests the browser extension in Chromium
+    e2e/firefox.sh       # the same in an installed Firefox
 
 The web app in `internal/web/static` is plain HTML, CSS and JavaScript
 modules with no build step. `DESIGN.md` describes the architecture and
