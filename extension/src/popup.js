@@ -56,7 +56,14 @@ function connectView(error) {
       return;
     }
     // The extension may only talk to the one server the user names here.
-    const granted = await api.permissions.request({ origins: [origin + '/*'] });
+    // A permission pattern names a host without its port.
+    const { protocol, hostname } = new URL(origin);
+    let granted = false;
+    try {
+      granted = await api.permissions.request({ origins: [`${protocol}//${hostname}/*`] });
+    } catch (err) {
+      console.warn('permission request failed', err);
+    }
     if (!granted) {
       status.className = 'error';
       status.textContent = 'Codemail needs permission to reach your server.';

@@ -67,9 +67,11 @@ Safari turns "Allow unsigned extensions" off again every time it quits,
 so this is for trying it out. A version that stays installed must be
 signed with an Apple Developer ID and notarised, which needs Apple's paid
 developer programme. Safari also asks, per website, whether the extension
-may act there; choose "Always Allow on Every Website" for codes to be
-offered everywhere. The build installs and enables in Safari 27; signing
-in and filling codes there have not been checked yet.
+may act there: the first time you click the Codemail button on a site it
+offers "Allow for One Day", "Always Allow on This Website" and "Always
+Allow on Every Website". Codes are only offered on sites you have allowed.
+Connecting, filling single and six-box fields, the popup and Disconnect
+have been checked by hand in Safari 27; there is no automated Safari test.
 
 ## Connect
 
