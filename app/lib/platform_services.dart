@@ -22,8 +22,16 @@ Future<Notify> initNotifications({bool askPermission = true}) async {
     await _notifications.initialize(
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-        macOS: DarwinInitializationSettings(),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
+        macOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
         linux: LinuxInitializationSettings(defaultActionName: 'Open'),
         windows: WindowsInitializationSettings(
           appName: 'Codemail',
@@ -43,14 +51,6 @@ Future<Notify> initNotifications({bool askPermission = true}) async {
           launch?.notificationResponse?.payload ?? '',
         );
       }
-    }
-    // Asking needs a visible screen, so the background service skips it.
-    if (askPermission) {
-      await _notifications
-          .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.requestNotificationsPermission();
     }
     ready = true;
   } on Object catch (e) {
@@ -82,6 +82,30 @@ Future<Notify> initNotifications({bool askPermission = true}) async {
       debugPrint('notification failed: $e');
     }
   };
+}
+
+/// Asks the user to allow notifications. Called once the device is
+/// connected, when notifications start to matter, not at first launch.
+Future<void> requestNotificationPermission() async {
+  try {
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin
+        >()
+        ?.requestPermissions(alert: true, badge: true, sound: true);
+  } on Object catch (e) {
+    debugPrint('notification permission request failed: $e');
+  }
 }
 
 /// On desktop the app lives in the system tray: closing the window hides

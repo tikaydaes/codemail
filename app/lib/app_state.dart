@@ -42,7 +42,10 @@ class AppState extends ChangeNotifier {
 
   final SecretStore secrets;
   final SharedPreferences prefs;
-  final Notify? notify;
+
+  /// Shows a system notification. Set once notifications are ready,
+  /// which happens after the app is on screen.
+  Notify? notify;
   final http.Client Function()? clientFactory;
 
   late final SessionStore session = SessionStore(secrets);
