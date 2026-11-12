@@ -31,7 +31,19 @@ Future<Notify> initNotifications({bool askPermission = true}) async {
           guid: '6f1d6c0a-6b0c-4f0e-9a1f-2f7d3f6a9c41',
         ),
       ),
+      // Tapping a notification asks the app to open that message.
+      onDidReceiveNotificationResponse: (response) =>
+          openMessageRequest.value = int.tryParse(response.payload ?? ''),
     );
+    if (askPermission) {
+      // The app may have been started by a tap on a notification.
+      final launch = await _notifications.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        openMessageRequest.value = int.tryParse(
+          launch?.notificationResponse?.payload ?? '',
+        );
+      }
+    }
     // Asking needs a visible screen, so the background service skips it.
     if (askPermission) {
       await _notifications
@@ -44,13 +56,14 @@ Future<Notify> initNotifications({bool askPermission = true}) async {
   } on Object catch (e) {
     debugPrint('notifications unavailable: $e');
   }
-  return (title, body) async {
+  return (title, body, {messageId}) async {
     if (!ready) return;
     try {
       await _notifications.show(
         id: _nextNotification++,
         title: title,
         body: body,
+        payload: messageId?.toString(),
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'codes',
@@ -109,6 +122,11 @@ class DesktopShell with TrayListener, WindowListener {
       debugPrint('tray unavailable: $e');
     }
   }
+
+  /// Brings the window forward when a notification is tapped.
+  void watchNotificationTaps() => openMessageRequest.addListener(() {
+    if (openMessageRequest.value != null) _show();
+  });
 
   Future<void> _show() async {
     await windowManager.show();

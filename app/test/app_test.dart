@@ -60,77 +60,110 @@ const _markdown =
     '[Verify email](https://app.acmecloud.example/verify?t=1)\n\n- This link expires in 24 hours\n- Ignore this if it was not you';
 
 /// Answers the API calls the screens make.
-http.Client fakeClient({List<String>? calls}) =>
-    MockClient.streaming((request, body) async {
-      calls?.add('${request.method} ${request.url.path}');
-      http.StreamedResponse json(Object data, [int status = 200]) =>
-          http.StreamedResponse(
-            Stream.value(utf8.encode(jsonEncode(data))),
-            status,
-            headers: {'content-type': 'application/json'},
-          );
-      final path = request.url.path;
-      if (path == '/api/v1/me') {
-        return json({
-          'user': {'username': 'kaity'},
-        });
-      }
-      if (path == '/api/v1/events') {
-        return http.StreamedResponse(
-          Stream.value(utf8.encode(': connected\n\n')),
-          200,
-        );
-      }
-      if (path == '/api/v1/messages') {
-        return json({
-          'messages': request.url.queryParameters['kind'] == 'code'
-              ? _messages()
-              : <Object>[],
-        });
-      }
-      if (path == '/api/v1/messages/8') {
-        return json({
-          'message': {
-            ..._messages()[1],
-            'markdown': _markdown,
-            'from': 'Acme Cloud <hello@acmecloud.example>',
-            'expires_at': _now() + 600000,
-          },
-        });
-      }
-      if (path == '/api/v1/messages/9' && request.method == 'PATCH') {
-        return json({
-          'message': {..._messages()[0], 'used_at': _now()},
-        });
-      }
-      if (path == '/api/v1/addresses') {
-        return json({
-          'username': 'kaity',
-          'shared_domains': [
-            {
-              'id': 1,
-              'name': 'codes.example',
-              'allow_mailbox': true,
-              'allow_aliases': true,
-              'allow_subdomains': true,
-            },
-          ],
-          'domains': [
-            {'id': 2, 'name': 'kaity.example', 'verified': true},
-          ],
-          'aliases': [
-            {
-              'id': 3,
-              'address': 'quiet-fern-4821@codes.example',
-              'label': 'Northwind Bank',
-              'generated': true,
-              'expected_sender': 'northwind.example',
-            },
-          ],
-        });
-      }
-      return json({'error': 'not found'}, 404);
+http.Client fakeClient({List<String>? calls}) => MockClient.streaming((
+  request,
+  body,
+) async {
+  calls?.add('${request.method} ${request.url.path}');
+  http.StreamedResponse json(Object data, [int status = 200]) =>
+      http.StreamedResponse(
+        Stream.value(utf8.encode(jsonEncode(data))),
+        status,
+        headers: {'content-type': 'application/json'},
+      );
+  final path = request.url.path;
+  if (path == '/api/v1/me') {
+    return json({
+      'user': {'username': 'kaity'},
     });
+  }
+  if (path == '/api/v1/events') {
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(': connected\n\n')),
+      200,
+    );
+  }
+  if (path == '/api/v1/messages') {
+    final q = (request.url.queryParameters['q'] ?? '').toLowerCase();
+    final all = request.url.queryParameters['kind'] == 'code'
+        ? _messages()
+        : <Map<String, Object>>[];
+    return json({
+      'messages': [
+        for (final m in all)
+          if (q.isEmpty || '${m['service']}'.toLowerCase().contains(q)) m,
+      ],
+    });
+  }
+  if (path == '/api/v1/messages/7/candidates') {
+    return json({
+      'candidates': [
+        {
+          'kind': 'code',
+          'value': '482913',
+          'context': '482913 is your Parcelly code',
+        },
+        {'kind': 'code', 'value': '2026', 'context': 'Copyright 2026 Parcelly'},
+      ],
+    });
+  }
+  if (path == '/api/v1/messages/7/correction') {
+    return json({
+      'message': {..._messages()[2], 'code': '', 'kind': 'other'},
+    });
+  }
+  if (path == '/api/v1/messages/7') {
+    return json({
+      'message': {
+        ..._messages()[2],
+        'markdown': 'Your code is 482913',
+        'from': 'Parcelly <no-reply@parcelly.example>',
+      },
+    });
+  }
+  if (path == '/api/v1/messages/8') {
+    return json({
+      'message': {
+        ..._messages()[1],
+        'markdown': _markdown,
+        'from': 'Acme Cloud <hello@acmecloud.example>',
+        'expires_at': _now() + 600000,
+      },
+    });
+  }
+  if (path == '/api/v1/messages/9' && request.method == 'PATCH') {
+    return json({
+      'message': {..._messages()[0], 'used_at': _now()},
+    });
+  }
+  if (path == '/api/v1/addresses') {
+    return json({
+      'username': 'kaity',
+      'shared_domains': [
+        {
+          'id': 1,
+          'name': 'codes.example',
+          'allow_mailbox': true,
+          'allow_aliases': true,
+          'allow_subdomains': true,
+        },
+      ],
+      'domains': [
+        {'id': 2, 'name': 'kaity.example', 'verified': true},
+      ],
+      'aliases': [
+        {
+          'id': 3,
+          'address': 'quiet-fern-4821@codes.example',
+          'label': 'Northwind Bank',
+          'generated': true,
+          'expected_sender': 'northwind.example',
+        },
+      ],
+    });
+  }
+  return json({'error': 'not found'}, 404);
+});
 
 Future<AppState> signedInState({List<String>? calls}) async {
   SharedPreferences.setMockInitialValues({});
@@ -308,6 +341,71 @@ void main() {
     expect(find.text('Disconnect this device'), findsOneWidget);
     await screenshot(tester, 'desktop-settings');
   });
+
+  testWidgets('search narrows the list', (tester) async {
+    final calls = <String>[];
+    await pump(tester, const Size(390, 844), calls: calls);
+    await tester.enterText(find.byType(TextField), 'parc');
+    await tester.pump(const Duration(milliseconds: 350)); // the debounce
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+    expect(find.text('Parcelly'), findsOneWidget);
+    expect(find.text('Northwind Bank'), findsNothing);
+    expect(
+      find.text('Copy code'),
+      findsNothing,
+      reason: 'no featured code while searching',
+    );
+    await screenshot(tester, 'phone-search');
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pump();
+    expect(find.text('Northwind Bank'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a tapped notification opens its message, which can be corrected',
+    (tester) async {
+      final calls = <String>[];
+      final state = await pump(tester, const Size(390, 844), calls: calls);
+      openMessageRequest.value = 7; // what tapping a notification does
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('482913 is your Parcelly code'), findsOneWidget);
+      expect(openMessageRequest.value, isNull);
+
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Wrong code?'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Correct this message'), findsOneWidget);
+      expect(
+        find.text('2026'),
+        findsOneWidget,
+        reason: 'other candidates are offered',
+      );
+      await screenshot(tester, 'phone-correction');
+      await tester.tap(find.text('There is no sign-in code'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Save'));
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.pump(const Duration(seconds: 3));
+      expect(calls, contains('POST /api/v1/messages/7/correction'));
+      expect(
+        state.codes.any((m) => m.id == 7),
+        isFalse,
+        reason: 'it no longer counts as a code',
+      );
+      expect(state.other.any((m) => m.id == 7), isTrue);
+    },
+  );
 
   testWidgets('shows the connect screen when not signed in', (tester) async {
     SharedPreferences.setMockInitialValues({});

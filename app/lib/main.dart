@@ -8,7 +8,11 @@ import 'ui/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (isDesktop) await DesktopShell().init();
+  if (isDesktop) {
+    final shell = DesktopShell();
+    await shell.init();
+    shell.watchNotificationTaps();
+  }
   final state = AppState(
     secrets: KeychainStore(),
     prefs: await SharedPreferences.getInstance(),

@@ -298,6 +298,28 @@ class CodemailApi {
         as Map<String, dynamic>,
   );
 
+  Future<List<Candidate>> candidates(int id) async => [
+    for (final c
+        in (await _call('GET', '/api/v1/messages/$id/candidates'))['candidates']
+            as List)
+      Candidate.fromJson(c as Map<String, dynamic>),
+  ];
+
+  /// Records what the code or link really is; an empty value means the
+  /// message has none.
+  Future<Message> correct(
+    int id, {
+    required String kind,
+    required String value,
+  }) async => Message.fromJson(
+    (await _call(
+          'POST',
+          '/api/v1/messages/$id/correction',
+          body: {'kind': kind, 'value': value},
+        ))['message']
+        as Map<String, dynamic>,
+  );
+
   Future<void> deleteMessage(int id) => _call('DELETE', '/api/v1/messages/$id');
 
   Future<Addresses> addresses() async =>

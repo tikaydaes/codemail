@@ -61,7 +61,7 @@ class _ConnectionHandler extends TaskHandler {
             : showCodes
             ? showCode(m.code)
             : 'New sign-in code';
-        await notify(m.title, body);
+        await notify(m.title, body, messageId: m.id);
       },
     );
     await _watcher!.start();

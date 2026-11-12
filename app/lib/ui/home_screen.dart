@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../app_state.dart';
 import '../core/format.dart';
 import '../core/models.dart';
+import '../start_at_login.dart';
 import 'app.dart';
 import 'message_screen.dart';
 
@@ -22,6 +24,31 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    openMessageRequest.addListener(_openRequested);
+    // A tap may have arrived before this screen existed.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openRequested());
+  }
+
+  @override
+  void dispose() {
+    openMessageRequest.removeListener(_openRequested);
+    super.dispose();
+  }
+
+  void _openRequested() {
+    final id = openMessageRequest.value;
+    if (id == null || !mounted) return;
+    openMessageRequest.value = null;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MessageScreen(state: widget.state, id: id),
+      ),
+    );
+  }
 
   static const _destinations = [
     (icon: Icons.password, label: 'Codes'),
@@ -143,14 +170,18 @@ class LiveChip extends StatelessWidget {
 /// Opens a confirmation link, asking first when it does not go to the
 /// sender's own domain.
 Future<void> openLink(BuildContext context, AppState state, Message m) async {
-  if (!m.linkMatchesSender) {
+  if (!m.linkMatchesSender || state.alwaysConfirmLinks) {
     final go = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Check this link'),
+        title: Text(
+          m.linkMatchesSender ? 'Open this link?' : 'Check this link',
+        ),
         content: Text(
-          'This link goes to ${m.linkHost}, which is not the sender\'s domain '
-          '(${m.senderDomain.isEmpty ? 'unknown' : m.senderDomain}). Open it anyway?',
+          m.linkMatchesSender
+              ? 'It goes to ${m.linkHost}, the sender\'s own domain.'
+              : 'This link goes to ${m.linkHost}, which is not the sender\'s domain '
+                    '(${m.senderDomain.isEmpty ? 'unknown' : m.senderDomain}). Open it anyway?',
         ),
         actions: [
           TextButton(
@@ -182,6 +213,31 @@ class MessagesPage extends StatefulWidget {
 
 class _MessagesPageState extends State<MessagesPage> {
   late final Timer _tick;
+  final _search = TextEditingController();
+  Timer? _debounce;
+  List<Message>? _results; // null when not searching
+
+  void _onSearch(String text) {
+    _debounce?.cancel();
+    final query = text.trim();
+    if (query.isEmpty) {
+      setState(() => _results = null);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final found = await widget.state.api!.messages(
+          kind: widget.kind,
+          search: query,
+        );
+        if (mounted && _search.text.trim() == query) {
+          setState(() => _results = found);
+        }
+      } on Exception catch (e) {
+        if (mounted) toast(context, '$e');
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -193,6 +249,8 @@ class _MessagesPageState extends State<MessagesPage> {
   @override
   void dispose() {
     _tick.cancel();
+    _debounce?.cancel();
+    _search.dispose();
     super.dispose();
   }
 
@@ -212,9 +270,10 @@ class _MessagesPageState extends State<MessagesPage> {
     final state = widget.state;
     final theme = Theme.of(context);
     final isCodes = widget.kind == 'code';
-    final messages = isCodes ? state.codes : state.other;
+    final searching = _results != null;
+    final messages = _results ?? (isCodes ? state.codes : state.other);
     final now = DateTime.now();
-    final fresh = isCodes
+    final fresh = isCodes && !searching
         ? messages.where((m) => m.isFresh(now)).firstOrNull
         : null;
     final rest = [
@@ -227,6 +286,30 @@ class _MessagesPageState extends State<MessagesPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: TextField(
+              controller: _search,
+              onChanged: _onSearch,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search service, address or code',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _search.clear();
+                          _onSearch('');
+                        },
+                      ),
+                border: const OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
           if (fresh != null)
             _FreshCard(
               message: fresh,
@@ -237,7 +320,9 @@ class _MessagesPageState extends State<MessagesPage> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 24),
               child: Text(
-                isCodes
+                searching
+                    ? 'Nothing matches that search.'
+                    : isCodes
                     ? 'No codes yet. Mail sent to your addresses appears here the moment it arrives.'
                     : 'Mail without a code or link appears here.',
                 textAlign: TextAlign.center,
@@ -453,7 +538,12 @@ class _AddressesPageState extends State<AddressesPage> {
     super.dispose();
   }
 
-  void _reload() => setState(() => _addresses = widget.state.api!.addresses());
+  void _reload() {
+    // A block body: setState must not be handed the Future itself.
+    setState(() {
+      _addresses = widget.state.api!.addresses();
+    });
+  }
 
   Future<void> _copy(String address) async {
     await Clipboard.setData(ClipboardData(text: address));
@@ -661,6 +751,15 @@ class SettingsPage extends StatelessWidget {
           ),
         ),
         SwitchListTile(
+          title: const Text('Always ask before opening a link'),
+          subtitle: const Text(
+            'Links that do not go to the sender\'s own domain always ask',
+          ),
+          value: state.alwaysConfirmLinks,
+          onChanged: state.setAlwaysConfirmLinks,
+        ),
+        if (!kIsWeb && StartAtLogin.supported) const _StartAtLoginTile(),
+        SwitchListTile(
           title: const Text('Show the code in notifications'),
           value: state.showCodeInNotifications,
           onChanged: state.setShowCodeInNotifications,
@@ -693,6 +792,48 @@ class SettingsPage extends StatelessWidget {
           onTap: state.signOut,
         ),
       ],
+    );
+  }
+}
+
+/// Starts Codemail when the user signs in to their computer, so codes
+/// arrive without having to open it. Windows and Linux only for now.
+class _StartAtLoginTile extends StatefulWidget {
+  const _StartAtLoginTile();
+
+  @override
+  State<_StartAtLoginTile> createState() => _StartAtLoginTileState();
+}
+
+class _StartAtLoginTileState extends State<_StartAtLoginTile> {
+  final _startAtLogin = StartAtLogin();
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAtLogin.isEnabled().then((v) {
+      if (mounted) setState(() => _enabled = v);
+    }, onError: (_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      title: const Text('Start when you sign in to this computer'),
+      value: _enabled ?? false,
+      onChanged: _enabled == null
+          ? null
+          : (v) async {
+              try {
+                await _startAtLogin.setEnabled(v);
+                if (mounted) setState(() => _enabled = v);
+              } on Object catch (e) {
+                if (context.mounted) {
+                  toast(context, 'Could not change this: $e');
+                }
+              }
+            },
     );
   }
 }

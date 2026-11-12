@@ -7,6 +7,7 @@ import 'package:codemail/core/format.dart';
 import 'package:codemail/core/sse.dart';
 import 'package:codemail/core/watcher.dart';
 import 'package:codemail/session_store.dart';
+import 'package:codemail/start_at_login.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A stand-in Codemail server with just enough behaviour to exercise the
@@ -148,6 +149,29 @@ void main() {
       ago(DateTime(2026, 1, 1, 12, 0, 0), now: DateTime(2026, 1, 1, 12, 0, 42)),
       '42 s ago',
     );
+  });
+
+  test('start at login writes and removes a Linux autostart entry', () async {
+    final home = await Directory.systemTemp.createTemp('codemail-test');
+    addTearDown(() => home.delete(recursive: true));
+    final start = StartAtLogin(
+      executable: '/opt/codemail/codemail',
+      environment: {'HOME': home.path},
+      windows: false,
+    );
+    expect(await start.isEnabled(), isFalse);
+    await start.setEnabled(true);
+    expect(
+      start.desktopFile.path,
+      '${home.path}/.config/autostart/codemail.desktop',
+    );
+    expect(
+      await start.desktopFile.readAsString(),
+      contains('Exec="/opt/codemail/codemail"'),
+    );
+    expect(await start.isEnabled(), isTrue);
+    await start.setEnabled(false);
+    expect(await start.isEnabled(), isFalse);
   });
 
   test('PKCE challenge is the SHA-256 of the verifier', () {

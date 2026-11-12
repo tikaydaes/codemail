@@ -17,7 +17,14 @@ import 'session_store.dart';
 export 'session_store.dart' show MemorySecretStore, SecretStore;
 
 /// Shows a system notification.
-typedef Notify = Future<void> Function(String title, String body);
+typedef Notify = Future<void> Function(
+  String title,
+  String body, {
+  int? messageId,
+});
+
+/// Set when the user taps a notification: the message to open.
+final openMessageRequest = ValueNotifier<int?>(null);
 
 bool get isDesktop =>
     !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
@@ -69,12 +76,15 @@ class AppState extends ChangeNotifier {
   bool get showCodeInNotifications =>
       prefs.getBool('showCodeInNotifications') ?? true;
   bool get stayConnected => prefs.getBool('stayConnected') ?? true;
+  bool get alwaysConfirmLinks => prefs.getBool('alwaysConfirmLinks') ?? false;
 
   Future<void> setAutoCopy(bool v) => _set(() => prefs.setBool('autoCopy', v));
   Future<void> setClearClipboardSeconds(int v) =>
       _set(() => prefs.setInt('clearClipboardSeconds', v));
   Future<void> setShowCodeInNotifications(bool v) =>
       _set(() => prefs.setBool('showCodeInNotifications', v));
+  Future<void> setAlwaysConfirmLinks(bool v) =>
+      _set(() => prefs.setBool('alwaysConfirmLinks', v));
   Future<void> setStayConnected(bool v) =>
       _set(() => prefs.setBool('stayConnected', v));
 
@@ -269,7 +279,11 @@ class AppState extends ChangeNotifier {
     // On Android the background service announces new codes, whether or
     // not the app is open; announcing here too would show each one twice.
     if (!backgroundAnnounces) {
-      notify?.call(m.title, autoCopy && m.hasCode ? '$body · copied' : body);
+      notify?.call(
+        m.title,
+        autoCopy && m.hasCode ? '$body · copied' : body,
+        messageId: m.id,
+      );
     }
     if (autoCopy && m.hasCode) copyToClipboard(m.code);
   }
@@ -300,6 +314,24 @@ class AppState extends ChangeNotifier {
     final a = api;
     if (a == null) return;
     _put(await a.setUsed(m.id, used));
+  });
+
+  /// Saves the user's correction of what a message's code and link are.
+  Future<void> correct(
+    Message m, {
+    required String code,
+    required String link,
+  }) => _guard(() async {
+    final a = api;
+    if (a == null) return;
+    Message? latest;
+    if (code != m.code) {
+      latest = await a.correct(m.id, kind: 'code', value: code);
+    }
+    if (link != m.link) {
+      latest = await a.correct(m.id, kind: 'link', value: link);
+    }
+    if (latest != null) _put(latest);
   });
 
   Future<void> delete(Message m) => _guard(() async {

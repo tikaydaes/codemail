@@ -115,6 +115,19 @@ class Addresses {
   final List<Alias> aliases;
 }
 
+/// Something in a message that could be its code or link, offered when
+/// the user says the extraction was wrong.
+class Candidate {
+  Candidate.fromJson(Map<String, dynamic> j)
+    : kind = j['kind'] as String,
+      value = j['value'] as String,
+      context = j['context'] as String? ?? '';
+
+  final String kind; // "code" or "link"
+  final String value;
+  final String context;
+}
+
 class Tokens {
   const Tokens({
     required this.access,
