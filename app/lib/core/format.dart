@@ -15,6 +15,7 @@ String ago(DateTime? time, {DateTime? now}) {
       .difference(time)
       .inSeconds
       .clamp(0, 1 << 31);
+  if (s < 5) return 'just now';
   if (s < 60) return '$s s ago';
   if (s < 3600) return '${s ~/ 60} min ago';
   if (s < 86400) return '${s ~/ 3600} h ago';

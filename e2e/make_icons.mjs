@@ -65,6 +65,22 @@ const render = (size, recipe) => page.evaluate(async ({ size, recipe }) => {
     l.globalCompositeOperation = 'destination-in';
     l.fillStyle = fade; l.fillRect(0, 0, size, size);
     g.drawImage(layer, 0, 0);
+  } else if (recipe === 'template') {
+    // macOS menu bar: a single-colour shape the system tints itself.
+    const u = size / 36;
+    g.strokeStyle = g.fillStyle = '#000'; g.lineCap = 'round';
+    g.lineWidth = 2.5 * u;
+    g.beginPath(); g.roundRect(2 * u, 9 * u, 32 * u, 18 * u, 6 * u); g.stroke();
+    g.lineWidth = 1.9 * u;
+    for (const cx of [10, 18, 26]) {
+      for (let k = 0; k < 3; k++) {
+        const a = Math.PI / 2 + (k * Math.PI) / 3, r = 3.4 * u;
+        g.beginPath();
+        g.moveTo(cx * u - r * Math.cos(a), 18 * u - r * Math.sin(a));
+        g.lineTo(cx * u + r * Math.cos(a), 18 * u + r * Math.sin(a));
+        g.stroke();
+      }
+    }
   } // 'empty' stays transparent
   const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
   return Array.from(new Uint8Array(await blob.arrayBuffer()));
@@ -80,6 +96,7 @@ await write(`${dir}/android-background.png`, 1024, 'android');
 await write(`${dir}/android-foreground.png`, 1024, 'empty');
 await write(`${dir}/rounded.png`, 512, 'rounded');
 await write('../app/assets/tray.png', 64, 'small');
+await write('../app/assets/tray_template.png', 36, 'template');
 await write('../internal/web/static/icon.png', 192, 'small');
 
 // The Windows tray needs an .ico; one can simply wrap a PNG.

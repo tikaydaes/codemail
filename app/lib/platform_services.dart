@@ -125,9 +125,14 @@ class DesktopShell with TrayListener, WindowListener {
       },
     );
     try {
-      await trayManager.setIcon(
-        Platform.isWindows ? 'assets/tray.ico' : 'assets/tray.png',
-      );
+      // macOS menu bar icons are single-colour templates the system tints.
+      if (Platform.isMacOS) {
+        await trayManager.setIcon('assets/tray_template.png', isTemplate: true);
+      } else {
+        await trayManager.setIcon(
+          Platform.isWindows ? 'assets/tray.ico' : 'assets/tray.png',
+        );
+      }
       await trayManager.setToolTip('Codemail');
       await trayManager.setContextMenu(
         Menu(

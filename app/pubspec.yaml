@@ -71,6 +71,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/tray.png
+    - assets/tray_template.png
     - assets/tray.ico
     - assets/icon/rounded.png
 
