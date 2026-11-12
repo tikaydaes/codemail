@@ -715,6 +715,35 @@ func (s *DB) Audit(ctx context.Context, actor int64, action, target string) {
 		actor, action, target, ts(time.Now()))
 }
 
+func (s *DB) ListAudit(ctx context.Context, before int64, limit int) ([]store.AuditEntry, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	where, args := ``, []any{}
+	if before > 0 {
+		where, args = `WHERE a.id < ?`, append(args, before)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT a.id, a.actor, COALESCE(u.username, ''), a.action, a.target, a.at
+		FROM audit_log a LEFT JOIN users u ON u.id = a.actor `+where+`
+		ORDER BY a.id DESC LIMIT ?`, append(args, limit)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.AuditEntry
+	for rows.Next() {
+		var e store.AuditEntry
+		var at int64
+		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorName, &e.Action, &e.Target, &at); err != nil {
+			return nil, err
+		}
+		e.At = tm(at)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *DB) Stats(ctx context.Context) (store.Stats, error) {
 	var st store.Stats
 	var last sql.NullInt64

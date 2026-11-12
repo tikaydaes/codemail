@@ -110,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+a+"/addresses", s.auth(s.handleAddresses))
 	mux.HandleFunc("POST "+a+"/aliases", s.auth(s.handleClaimAlias))
 	mux.HandleFunc("POST "+a+"/aliases/generate", s.auth(s.handleGenerateAlias))
+	mux.HandleFunc("PATCH "+a+"/aliases/{id}", s.auth(s.handleUpdateAlias))
 	mux.HandleFunc("DELETE "+a+"/aliases/{id}", s.auth(s.handleDeleteAlias))
 	mux.HandleFunc("POST "+a+"/domains", s.session(s.handleAddDomain))
 	mux.HandleFunc("POST "+a+"/domains/{id}/check", s.session(s.handleCheckDomain))
@@ -141,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH "+a+"/admin/domains/{id}", s.admin(s.handleAdminUpdateDomain))
 	mux.HandleFunc("DELETE "+a+"/admin/domains/{id}", s.admin(s.handleAdminDeleteDomain))
 	mux.HandleFunc("GET "+a+"/admin/corrections", s.admin(s.handleAdminCorrections))
+	mux.HandleFunc("GET "+a+"/admin/audit", s.admin(s.handleAdminAudit))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "not found") })
 	mux.Handle("/", s.webHandler())

@@ -171,6 +171,10 @@ func (s *DB) SetAliasSender(ctx context.Context, id int64, sender string) error 
 	return changed(s.db.ExecContext(ctx, `UPDATE aliases SET expected_sender = ? WHERE id = ?`, sender, id))
 }
 
+func (s *DB) SetAliasLabel(ctx context.Context, userID, id int64, label string) error {
+	return changed(s.db.ExecContext(ctx, `UPDATE aliases SET label = ? WHERE id = ? AND user_id = ?`, label, id, userID))
+}
+
 func (s *DB) aliasAt(ctx context.Context, domainID int64, local string) (*store.Alias, error) {
 	a, err := scanAlias(s.db.QueryRowContext(ctx, `
 		SELECT `+aliasCols+` FROM aliases a JOIN domains d ON d.id = a.domain_id

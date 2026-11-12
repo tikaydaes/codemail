@@ -345,3 +345,20 @@ func (s *Server) handleAdminCorrections(w http.ResponseWriter, r *http.Request, 
 		})
 	}
 }
+
+// handleAdminAudit lists recorded actions, newest first: sign-ups,
+// recoveries, device and domain changes, and what admins did.
+func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request, u store.User) {
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	entries, err := s.Store.ListAudit(r.Context(), before, limit)
+	if err != nil {
+		s.failErr(w, err)
+		return
+	}
+	out := []map[string]any{}
+	for _, e := range entries {
+		out = append(out, map[string]any{"id": e.ID, "actor": e.ActorName, "action": e.Action, "target": e.Target, "at": unix(e.At)})
+	}
+	ok(w, map[string]any{"entries": out})
+}

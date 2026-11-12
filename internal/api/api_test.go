@@ -416,6 +416,15 @@ func TestEverything(t *testing.T) {
 	if status, _ := sam.do("POST", "/api/v1/aliases", map[string]any{"local": "kaity", "domain_id": sharedID}); status != 409 {
 		t.Errorf("claiming another user's mailbox name = %d, want 409", status)
 	}
+	shop := list(kaity.must(200, "GET", "/api/v1/addresses", nil), "aliases")[0].(map[string]any)
+	kaity.must(200, "PATCH", fmt.Sprintf("/api/v1/aliases/%v", shop["id"]), map[string]any{"label": "Shops"})
+	if got := list(kaity.must(200, "GET", "/api/v1/addresses", nil), "aliases")[0].(map[string]any)["label"]; got != "Shops" {
+		t.Errorf("label after edit = %v, want Shops", got)
+	}
+	if status, _ := sam.do("PATCH", fmt.Sprintf("/api/v1/aliases/%v", shop["id"]), map[string]any{"label": "x"}); status != 404 {
+		t.Errorf("editing another user's alias = %d, want 404", status)
+	}
+	kaity.must(200, "PATCH", fmt.Sprintf("/api/v1/aliases/%v", shop["id"]), map[string]any{"label": "Shopping"})
 	gen := kaity.must(201, "POST", "/api/v1/aliases/generate", map[string]any{"label": "Northwind Bank"})["alias"].(map[string]any)
 	addr := gen["address"].(string)
 	if !strings.HasSuffix(addr, "@codes.example") || strings.Count(addr, "-") != 2 {
@@ -566,6 +575,26 @@ func TestEverything(t *testing.T) {
 	resp, _ := sam.http.Do(req)
 	if resp.StatusCode != 403 {
 		t.Errorf("cross-site delete = %d, want 403", resp.StatusCode)
+	}
+
+	// --- the audit log records who did what ---
+	audit := list(kaity.must(200, "GET", "/api/v1/admin/audit?limit=200", nil), "entries")
+	seen := map[string]bool{}
+	for _, x := range audit {
+		en := x.(map[string]any)
+		seen[fmt.Sprintf("%v %v", en["actor"], en["action"])] = true
+	}
+	for _, want := range []string{"kaity register", "sam register", "sam recovery", "kaity add_shared_domain", "kaity create_invite", "sam add_domain", "kaity add_device", "kaity revoke_session"} {
+		if !seen[want] {
+			t.Errorf("audit log is missing %q (has %v)", want, seen)
+		}
+	}
+	older := list(kaity.must(200, "GET", fmt.Sprintf("/api/v1/admin/audit?limit=2&before=%v", audit[1].(map[string]any)["id"]), nil), "entries")
+	if len(older) != 2 || older[0].(map[string]any)["id"] != audit[2].(map[string]any)["id"] {
+		t.Errorf("audit paging returned %v", older)
+	}
+	if status, _ := sam.do("GET", "/api/v1/admin/audit", nil); status != 403 {
+		t.Errorf("non-admin reading the audit log = %d, want 403", status)
 	}
 
 	// --- the whole database copies into another and stays usable ---

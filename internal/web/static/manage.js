@@ -68,6 +68,14 @@ export async function addressesView() {
         h('td', { class: 'muted' }, day(a.created_at)),
         h('td', { class: 'actions' },
           h('button', { type: 'button', onclick: () => act(() => copy(a.address, 'Address copied')) }, 'Copy'),
+          h('button', { type: 'button', onclick: () => {
+            const label = prompt(`What is ${a.address} for? This name is shown on mail that arrives there.`, a.label);
+            if (label === null) return;
+            act(async () => {
+              await api('PATCH', `/api/v1/aliases/${a.id}`, { label });
+              reload();
+            });
+          } }, 'Rename'),
           h('button', { class: 'danger', type: 'button', onclick: () => confirm(`Release ${a.address}? Mail to it will be rejected, and someone else could claim it.`) && act(async () => {
             await api('DELETE', `/api/v1/aliases/${a.id}`);
             reload();
@@ -252,10 +260,40 @@ export async function settingsView() {
 // --- admin ---
 
 export async function adminView() {
-  const [status, settings, invites, users, domains] = await Promise.all([
+  const [status, settings, invites, users, domains, audit] = await Promise.all([
     api('GET', '/api/v1/admin/status'), api('GET', '/api/v1/admin/settings'), api('GET', '/api/v1/admin/invites'),
-    api('GET', '/api/v1/admin/users'), api('GET', '/api/v1/admin/domains'),
+    api('GET', '/api/v1/admin/users'), api('GET', '/api/v1/admin/domains'), api('GET', '/api/v1/admin/audit?limit=20'),
   ]);
+
+  // The audit log, in plain words.
+  const actions = {
+    register: 'created their account', recovery: 'signed in with a recovery code', delete_account: 'deleted their account',
+    add_device: 'connected a device', revoke_session: 'signed out a browser', add_domain: 'added their domain', delete_domain: 'removed their domain',
+    create_invite: 'created an invite code', delete_invite: 'revoked an invite code', update_user: 'changed the role of',
+    delete_user: 'deleted the account', issue_recovery_code: 'issued a recovery code for',
+    add_shared_domain: 'added the shared domain', update_shared_domain: 'changed the shared domain', delete_shared_domain: 'removed the shared domain',
+    export_corrections: 'exported corrections', set_registration: 'set registration to', set_max_retention_hours: 'set the longest retention (hours) to',
+    set_reject_auth_fail: 'set rejecting unverified mail to',
+  };
+  const auditBody = h('tbody', {});
+  const auditMore = h('button', { type: 'button', style: 'align-self:flex-start' }, 'Show older');
+  let oldest = 0;
+  const addAudit = (entries) => {
+    for (const e of entries) {
+      oldest = e.id;
+      auditBody.append(h('tr', {},
+        h('td', { class: 'muted', style: 'white-space:nowrap' }, new Date(e.at * 1000).toLocaleString()),
+        h('td', {}, h('strong', {}, e.actor || 'A deleted account'), ' ', actions[e.action] || e.action, ' ',
+          ['register', 'recovery', 'delete_account', 'export_corrections'].includes(e.action) ? '' : h('span', { class: 'mono small wrap' }, e.target))));
+    }
+    auditMore.hidden = entries.length < 20;
+  };
+  addAudit(audit.entries);
+  auditMore.addEventListener('click', () => act(async () => addAudit((await api('GET', `/api/v1/admin/audit?limit=20&before=${oldest}`)).entries)));
+  const auditCard = h('section', { class: 'card' }, h('h2', {}, 'Activity'),
+    h('p', { class: 'muted small' }, 'Account, device and administrative actions on this server. Mail content is never recorded here.'),
+    h('div', { class: 'tablebox' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'When'), h('th', {}, 'What'))), auditBody)),
+    auditMore);
   const tile = (label, value, note) => h('div', { class: 'card', style: 'gap:2px;padding:16px' },
     h('div', { class: 'muted small' }, label), h('div', { class: 'title' }, value), h('div', { class: 'muted small' }, note));
   const mb = status.bytes / 1048576;
@@ -374,5 +412,5 @@ export async function adminView() {
       tile('Storage', mb < 1 ? '< 1 MB' : `${mb.toFixed(0)} MB`, `${status.messages} messages kept`),
       tile('Corrections', String(status.corrections), status.corrections ? h('a', { href: '/api/v1/admin/corrections' }, 'Export for training') : 'None yet')),
     h('div', { class: 'columns' }, registration, policy),
-    shared, usersCard);
+    shared, usersCard, auditCard);
 }

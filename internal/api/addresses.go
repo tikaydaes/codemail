@@ -159,6 +159,25 @@ func (s *Server) handleGenerateAlias(w http.ResponseWriter, r *http.Request, u s
 	}
 }
 
+// handleUpdateAlias changes an address's label, the name shown on mail
+// that arrives there.
+func (s *Server) handleUpdateAlias(w http.ResponseWriter, r *http.Request, u store.User) {
+	var body struct{ Label string }
+	if !decode(w, r, &body) {
+		return
+	}
+	label := strings.TrimSpace(body.Label)
+	if len(label) > 80 {
+		fail(w, http.StatusBadRequest, "labels can be up to 80 characters")
+		return
+	}
+	if err := s.Store.SetAliasLabel(r.Context(), u.ID, pathID(r), label); err != nil {
+		s.failErr(w, err)
+		return
+	}
+	ok(w, map[string]any{})
+}
+
 func (s *Server) handleDeleteAlias(w http.ResponseWriter, r *http.Request, u store.User) {
 	if err := s.Store.DeleteAlias(r.Context(), u.ID, pathID(r)); err != nil {
 		s.failErr(w, err)

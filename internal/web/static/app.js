@@ -356,11 +356,22 @@ async function messagesView(kind) {
         }) }, 'Delete')));
   }
 
+  // The list loads 100 messages at a time.
+  const pageSize = 100;
+  const query = () => `kind=${kind}&limit=${pageSize}&q=${encodeURIComponent(search.value.trim())}`;
+  const more = h('button', { type: 'button', style: 'align-self:flex-start', hidden: messages.length < pageSize, onclick: () => act(async () => {
+    const older = (await api('GET', `/api/v1/messages?${query()}&before=${messages[messages.length - 1].id}`)).messages;
+    messages = messages.concat(older);
+    more.hidden = older.length < pageSize;
+    drawList();
+  }) }, 'Show older messages');
+
   let searchTimer;
   search.addEventListener('input', () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => act(async () => {
-      messages = (await api('GET', `/api/v1/messages?kind=${kind}&limit=100&q=${encodeURIComponent(search.value.trim())}`)).messages;
+      messages = (await api('GET', `/api/v1/messages?${query()}`)).messages;
+      more.hidden = messages.length < pageSize;
       drawList();
     }), 250);
   });
@@ -382,6 +393,7 @@ async function messagesView(kind) {
         h('h1', { class: 'grow' }, kind === 'code' ? 'Codes' : 'Other mail'), livePill(),
         field('Search', search)),
       listBox,
+      more,
       h('p', { class: 'muted small' }, 'Codes older than 10 minutes are greyed out. Messages are deleted automatically; see Settings.')),
     aside,
   ];

@@ -9,7 +9,9 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));
-page.on('dialog', (d) => d.accept());
+// Dialogs are accepted; a prompt is answered with promptAnswer when set.
+let promptAnswer;
+page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? promptAnswer : undefined));
 const cdp = await ctx.newCDPSession(page);
 await cdp.send('WebAuthn.enable');
 await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
@@ -108,6 +110,9 @@ await step('addresses: generate and claim', async () => {
   await page.getByLabel('Name', { exact: true }).fill('shop');
   await page.getByRole('button', { name: 'Claim address' }).click();
   await page.getByText('shop@codes.example').waitFor({ timeout: 5000 });
+  promptAnswer = 'Online shopping';
+  await page.getByRole('row', { name: /shop@codes\.example/ }).getByRole('button', { name: 'Rename' }).click();
+  await page.getByRole('row', { name: /shop@codes\.example/ }).getByText('Online shopping').waitFor({ timeout: 5000 });
   await page.getByLabel('Domain', { exact: true }).last().fill('kaity.example');
   await page.getByRole('button', { name: 'Add a domain' }).click();
   await page.getByText('Waiting for DNS').waitFor({ timeout: 5000 });
@@ -140,6 +145,14 @@ await step('settings, sign out, sign in with passkey', async () => {
   await page.getByText('This browser').waitFor();
   await page.getByText(/Chrome on (macOS|Linux|Windows)/).first().waitFor();
   await shot('09-settings');
+  await page.getByRole('link', { name: 'Admin' }).click();
+  await page.getByRole('heading', { name: 'Activity' }).waitFor({ timeout: 5000 });
+  await page.getByText('created their account').waitFor();
+  await page.getByText('added the shared domain').waitFor();
+  await page.getByText('created an invite code').count();
+  await shot('09b-activity');
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('heading', { name: 'Passkeys' }).waitFor();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor({ timeout: 5000 });
   await shot('10-signin');

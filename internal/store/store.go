@@ -191,6 +191,16 @@ type Correction struct {
 	CreatedAt time.Time
 }
 
+// AuditEntry is one recorded administrative or security action.
+type AuditEntry struct {
+	ID        int64
+	ActorID   int64
+	ActorName string // empty if the account has since been deleted
+	Action    string
+	Target    string
+	At        time.Time
+}
+
 type Stats struct {
 	Users, Messages, Corrections int
 	Bytes                        int64
@@ -260,6 +270,7 @@ type Store interface {
 	ListAliases(ctx context.Context, userID int64) ([]Alias, error)
 	DeleteAlias(ctx context.Context, userID, id int64) error
 	SetAliasSender(ctx context.Context, id int64, sender string) error
+	SetAliasLabel(ctx context.Context, userID, id int64, label string) error
 	Resolve(ctx context.Context, addr string) (Recipient, error)
 
 	SaveMessage(ctx context.Context, m *Message) error
@@ -282,5 +293,8 @@ type Store interface {
 	SetSetting(ctx context.Context, key, value string) error
 
 	Audit(ctx context.Context, actor int64, action, target string)
+	// ListAudit returns the newest entries, optionally only those older
+	// than the entry with ID before.
+	ListAudit(ctx context.Context, before int64, limit int) ([]AuditEntry, error)
 	Stats(ctx context.Context) (Stats, error)
 }
