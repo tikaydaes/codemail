@@ -347,6 +347,15 @@ void main() {
     );
     Future<void> settle() =>
         Future<void>.delayed(const Duration(milliseconds: 150));
+    // Waits for the watcher to reach a message rather than for a fixed time,
+    // then a little longer so that anything unexpected would show up too.
+    Future<void> reached(int id) async {
+      for (var i = 0; i < 100 && saved != id; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      await settle();
+    }
+
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     Map<String, Object> message(
       int id,
@@ -389,7 +398,7 @@ void main() {
       message(10, '999000', age: 3600),
     ); // missed long ago
     await server.push('message', 11, message(11, '333444'));
-    await settle();
+    await reached(11);
     expect(announced, ['111222', '333444']);
     expect(saved, 11);
     first.stop();
@@ -404,7 +413,7 @@ void main() {
     expect(server.lastEventId, '11');
     await server.push('message', 11, message(11, '333444'));
     await server.push('message', 12, message(12, '555666'));
-    await settle();
+    await reached(12);
     expect(announced, ['111222', '333444', '555666']);
     second.stop();
   });
