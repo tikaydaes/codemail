@@ -135,6 +135,28 @@ async function call(method, path, body) {
   return data;
 }
 
+// --- toolbar badge ---
+
+// The badge shows how many unused codes arrived in the last few minutes.
+// The worker cannot hold a live connection (browsers stop idle workers),
+// so it checks once a minute and whenever something changes.
+async function updateBadge() {
+  let count = 0;
+  try {
+    const res = await call('GET', '/api/v1/codes/for-site?domain=');
+    count = (res.messages || []).length;
+  } catch {
+    // Not connected or offline: no badge.
+  }
+  await api.action.setBadgeBackgroundColor({ color: '#1F4FD8' });
+  await api.action.setBadgeText({ text: count ? String(count) : '' });
+}
+
+api.alarms.create('badge', { periodInMinutes: 1 });
+api.alarms.onAlarm.addListener((alarm) => { if (alarm.name === 'badge') updateBadge(); });
+api.runtime.onInstalled.addListener(updateBadge);
+api.runtime.onStartup.addListener(updateBadge);
+
 // --- requests from the popup and content scripts ---
 
 const handlers = {
@@ -142,13 +164,29 @@ const handlers = {
     const s = await store.get(['server', 'username']);
     return { connected: !!s.server, server: s.server || '', username: s.username || '' };
   },
-  connect: (m) => connect(m.server).then(() => ({})),
-  disconnect: () => disconnect().then(() => ({})),
+  connect: (m) => connect(m.server).then(updateBadge).then(() => ({})),
+  disconnect: () => disconnect().then(updateBadge).then(() => ({})),
   // Codes received in the last few minutes, each marked with whether it
   // may be offered on the given site.
-  codes: (m) => call('GET', '/api/v1/codes/for-site?domain=' + encodeURIComponent(m.domain || '')),
+  async codes(m) {
+    const res = await call('GET', '/api/v1/codes/for-site?domain=' + encodeURIComponent(m.domain || ''));
+    api.action.setBadgeText({ text: res.messages?.length ? String(res.messages.length) : '' });
+    return res;
+  },
   recent: () => call('GET', '/api/v1/messages?kind=code&limit=10'),
-  used: (m) => call('PATCH', `/api/v1/messages/${m.id}`, { used: true }),
+  used: (m) => call('PATCH', `/api/v1/messages/${m.id}`, { used: true }).finally(updateBadge),
+  // Opens a confirmation link a page asked for. The page supplies only a
+  // message ID; the link and whether this site may use it come from the
+  // server, so a page cannot make the extension open anything else.
+  async open(m) {
+    const res = await call('GET', '/api/v1/codes/for-site?domain=' + encodeURIComponent(m.domain || ''));
+    const message = (res.messages || []).find((x) => x.id === m.id && x.match && x.link);
+    if (!message) throw new Error('That link is not available on this site.');
+    await api.tabs.create({ url: message.link });
+    await call('PATCH', `/api/v1/messages/${message.id}`, { used: true });
+    updateBadge();
+    return {};
+  },
   trust: (m) => call('POST', '/api/v1/site-links', { message_id: m.id, domain: m.domain }),
   alias: (m) => call('POST', '/api/v1/aliases/generate', { label: m.label }),
 };
@@ -160,13 +198,13 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // from the content script in a web page. Web pages get the minimum.
   const fromWebPage = !(sender.url || '').startsWith(api.runtime.getURL(''));
   if (fromWebPage) {
-    if (!['codes', 'used', 'status'].includes(message.type)) {
+    if (!['codes', 'used', 'open', 'status'].includes(message.type)) {
       sendResponse({ error: 'Not allowed from a page.' });
       return false;
     }
     // A page only ever learns about codes for its own site: the domain
     // is taken from the browser, not from what the content script says.
-    if (message.type === 'codes') {
+    if (message.type === 'codes' || message.type === 'open') {
       let domain = '';
       try { domain = new URL(sender.url).hostname; } catch { /* no usable URL: offer nothing */ }
       message = { ...message, domain };

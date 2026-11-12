@@ -110,13 +110,48 @@ await step('does not offer the code on an unrelated site', async () => {
   if (value !== '') throw new Error(`the code was filled on another site: "${value}"`);
 });
 
+await step('offers a confirmation link and opens it', async () => {
+  execFileSync('python3', ['-c', `
+import smtplib
+from email.message import EmailMessage
+m=EmailMessage(); m['From']='Northwind Bank <hello@northwind.example>'; m['To']='kaity@codes.example'; m['Subject']='Confirm your email address'
+m.set_content('Confirm your email')
+m.add_alternative('<p>Confirm your email address to finish.</p><a href="https://login.northwind.example/confirm?token=8f3a9c1e7b2d4f6a8c0e1b3d5f7a9c1e">Verify email</a>', subtype='html')
+s=smtplib.SMTP('127.0.0.1',2525); s.send_message(m); s.quit()`]);
+  // Use up the code from the previous step so the link is what is offered.
+  const list = await (await fetch(origin + '/api/v1/messages?kind=code', { headers: { Authorization: 'Bearer ' + tokens.access_token } })).json();
+  for (const m of list.messages.filter((m) => m.code && !m.used_at)) {
+    await fetch(origin + '/api/v1/messages/' + m.id, { method: 'PATCH', headers: { Authorization: 'Bearer ' + tokens.access_token, 'Content-Type': 'application/json' }, body: JSON.stringify({ used: true }) });
+  }
+  await page.goto('https://login.northwind.example/verify');
+  await page.locator('#code').focus();
+  await page.waitForTimeout(3500);
+  await page.screenshot({ path: 'shots/ext-4b-link.png' });
+  const opened = ctx.waitForEvent('page', { timeout: 5000 });
+  await clickOffer('#code');
+  const tab = await opened; // the stand-in site is not reachable from this tab, so check the record instead
+  await tab.close();
+  await page.waitForTimeout(500);
+  const after = await (await fetch(origin + '/api/v1/messages?kind=code', { headers: { Authorization: 'Bearer ' + tokens.access_token } })).json();
+  const linkMessage = after.messages.find((m) => m.link);
+  if (!linkMessage?.link.startsWith('https://login.northwind.example/confirm?token=') || !linkMessage.used_at) throw new Error('the link was not recorded as used');
+  const badge = await worker.evaluate(() => chrome.action.getBadgeText({}));
+  if (badge !== '') throw new Error('badge still shows "' + badge + '" after everything was used');
+  mail('Northwind Bank <otp@northwind.example>', 'Your one-time passcode', 'Use 111222 to finish signing in. It expires in 10 minutes.');
+  await page.goto('https://login.northwind.example/verify');
+  await page.locator('#code').focus();
+  await page.waitForTimeout(3500);
+  const badge2 = await worker.evaluate(() => chrome.action.getBadgeText({}));
+  if (badge2 !== '1') throw new Error('badge shows "' + badge2 + '", want 1');
+});
+
 await step('popup lists recent codes', async () => {
   const popup = await ctx.newPage();
   await popup.setViewportSize({ width: 340, height: 520 });
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   await popup.waitForTimeout(1500);
   if (process.env.DEBUG_POPUP) console.log('POPUP:', (await popup.locator('body').innerText()).replace(/\n+/g, ' | '));
-  await popup.getByText('111 222').waitFor({ timeout: 5000 });
+  await popup.getByText('111 222').first().waitFor({ timeout: 5000 });
   await popup.getByText('Northwind Bank').first().waitFor();
   await popup.getByRole('button', { name: 'Disconnect' }).waitFor();
   await popup.screenshot({ path: 'shots/ext-5-popup.png' });

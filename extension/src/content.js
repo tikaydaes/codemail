@@ -96,7 +96,21 @@
     const box = root.querySelector('.box');
     box.textContent = '';
     const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; if (text) n.textContent = text; return n; };
-    if (offer) {
+    if (offer && !offer.code) {
+      // The email carried a confirmation link instead of a code.
+      const btn = el('button', 'fill');
+      btn.type = 'button';
+      const left = el('span', '');
+      left.append(el('div', '', `Confirmation link to ${offer.link_host}`), el('div', 'from', `From ${offer.service || offer.sender_domain} · Codemail`));
+      btn.append(left, el('span', 'go', 'Open'));
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dismissed.add(field);
+        hide();
+        api.runtime.sendMessage({ type: 'open', id: offer.id }).catch(() => {});
+      });
+      box.append(btn);
+    } else if (offer) {
       const btn = el('button', 'fill');
       btn.type = 'button';
       const left = el('span', '');
@@ -136,7 +150,8 @@
     if (!res || res.error) return hide(); // not connected: stay out of the way
     // Only codes from a verified sender that belongs to this site (or that
     // the user has linked to it) are offered here. Others stay in the popup.
-    const offer = (res.messages || []).find((m) => m.code && m.match);
+    // A link is only offered when it goes to the sender's own domain.
+    const offer = (res.messages || []).find((m) => m.match && (m.code || (m.link && m.link_matches_sender)));
     render(offer || null);
   }
 
