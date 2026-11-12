@@ -182,6 +182,8 @@ Tokens are 256-bit random values stored only as SHA-256 hashes.
 
 ## 8. API
 
+The full reference is in `docs/API.md`; this is the outline.
+
 All under `/api/v1`, JSON, authenticated by session cookie or
 `Authorization: Bearer <access token>`.
 

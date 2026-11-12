@@ -157,9 +157,11 @@ prints a one-time recovery code.
 
     go test ./...        # API and conversion tests
     e2e/run.sh           # drives the web app in a headless browser
+    e2e/extension.sh     # tests the browser extension in Chromium
 
 The web app in `internal/web/static` is plain HTML, CSS and JavaScript
-modules with no build step. `DESIGN.md` describes the architecture.
+modules with no build step. `DESIGN.md` describes the architecture and
+`docs/API.md` is the API reference.
 
 ## Licence
 
