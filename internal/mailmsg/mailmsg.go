@@ -23,3 +23,18 @@ func Parse(raw []byte) (extract.Input, error) {
 		Bulk:    env.GetHeader("List-Unsubscribe") != "",
 	}, nil
 }
+
+// Unforward rewrites the input of a message its owner forwarded by hand,
+// so that it reads as the original: the original sender and subject, when
+// the body quotes them. It reports whether it changed anything.
+func Unforward(in extract.Input) (extract.Input, bool) {
+	from, subject, found := Forwarded(in.Text)
+	if !found {
+		return in, false
+	}
+	in.From = from
+	if subject != "" {
+		in.Subject = subject
+	}
+	return in, true
+}

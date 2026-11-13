@@ -27,6 +27,7 @@ var copyTables = []struct {
 	{"messages", nil, true},
 	{"corrections", nil, true},
 	{"site_links", nil, false},
+	{"sources", []string{"codes_only"}, true},
 	{"settings", nil, false},
 	{"audit_log", nil, true},
 }

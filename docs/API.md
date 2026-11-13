@@ -48,7 +48,7 @@ tokens. Endpoints marked *admin* also need the user to be an admin.
 A message has `id`, `kind` (`code` if it has a code or link, else
 `other`), `rcpt`, `from`, `subject`, `service`, `code`, `link`,
 `link_host`, `link_matches_sender`, `confidence`, `auth` (`pass`, `fail`,
-`none`), `sender_domain`, `flags` (may contain `unexpected_sender`),
+`none`), `sender_domain`, `flags` (may contain `unexpected_sender`, `forwarded`, `fetched`),
 `received_at`, `expires_at`, `used_at`.
 
 | Method and path | Purpose |
@@ -74,6 +74,21 @@ A message has `id`, `kind` (`code` if it has a code or link, else
 | `POST /domains` *browser* | Body `name`. Adds the user's own domain, unverified, and returns the DNS `records` to publish, plus `recommended` records (SPF, DMARC and DKIM that reject mail forged as the domain; not checked). |
 | `POST /domains/{id}/check` *browser* | Looks the records up now; each record reports `found`. |
 | `DELETE /domains/{id}` *browser* | Removes the domain. |
+
+## Other mailboxes
+
+A source is another mailbox of the user's that feeds codes here. Its
+`kind` is `forward` (the user forwards mail from it to one of their
+addresses), `imap` or `jmap` (the server polls it). Messages that came
+through one carry the flag `forwarded` or `fetched`.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /sources` | `sources`, `polling` (whether this server can poll) and `max`. A source has `id`, `address`, `kind`, `codes_only`, `host`, `username`, `last_checked`, `last_error`. The password is never returned. |
+| `POST /sources` *browser* | Body `address`, `kind`; for `forward` optionally `codes_only` (default true); for `imap` and `jmap` also `host`, `password` and optionally `username`. `host` is `name` or `name:port` for IMAP (993 is TLS, other ports use STARTTLS) and the JMAP session URL or server name for JMAP. The server signs in before saving and answers 400 with the reason if that fails. |
+| `PATCH /sources/{id}` *browser* | Body `codes_only` for a forwarding source; `host`, `username`, `password` for a polled one, which is signed in to again. |
+| `POST /sources/{id}/check` *browser* | Looks at a polled mailbox now and returns the source with the outcome. |
+| `DELETE /sources/{id}` *browser* | Unlinks it and deletes its stored password. |
 
 ## Devices, OAuth and pairing
 

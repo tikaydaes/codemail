@@ -253,6 +253,11 @@ const forSiteWindow = 15 * time.Minute
 // used that sender's codes there before, and "" otherwise.
 func (s *Server) handleForSite(w http.ResponseWriter, r *http.Request, u store.User) {
 	ctx := r.Context()
+	if s.Fetch != nil {
+		// A code has probably just been sent: look at the user's linked
+		// mailboxes now rather than at the next interval.
+		s.Fetch.Kick(u.ID)
+	}
 	site := mailauth.OrgDomain(r.URL.Query().Get("domain"))
 	learned, err := s.Store.SiteSenders(ctx, u.ID, site)
 	if err != nil {

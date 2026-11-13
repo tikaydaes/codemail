@@ -26,7 +26,9 @@ import (
 
 	"github.com/tikaydaes/codemail/internal/api"
 	"github.com/tikaydaes/codemail/internal/extract"
+	"github.com/tikaydaes/codemail/internal/fetch"
 	"github.com/tikaydaes/codemail/internal/hub"
+	"github.com/tikaydaes/codemail/internal/ingest"
 	"github.com/tikaydaes/codemail/internal/mailauth"
 	"github.com/tikaydaes/codemail/internal/mailmsg"
 	"github.com/tikaydaes/codemail/internal/smtpd"
@@ -182,6 +184,8 @@ func serve(args []string) error {
 	trustSenders := fl.Bool("dev-trust-senders", false, "with -dev: treat every sender as verified, for testing the browser extension")
 	retention := fl.Duration("retention", 7*24*time.Hour, "how long to keep messages by default")
 	maxBytes := fl.Int64("max-bytes", 10<<20, "largest accepted message")
+	fetchInterval := fl.Duration("fetch-interval", 20*time.Second, "how often to look at each mailbox users have linked for polling")
+	fetchPrivate := fl.Bool("fetch-allow-private", false, "let users link mailboxes on private and local addresses (your own network)")
 	fl.Parse(args)
 
 	origin := "https://" + *hostname
@@ -262,6 +266,20 @@ func serve(args []string) error {
 		go func() { errc <- httpSrv.ListenAndServeTLS("", "") }()
 		go func() { errc <- http.ListenAndServe(":80", certs.HTTPHandler(nil)) }()
 	}
+
+	// Mailboxes users have linked are polled with the same sender checks
+	// and the same handling as mail that arrives over SMTP.
+	sealer, err := fetch.LoadSealer(*data)
+	if err != nil {
+		return err
+	}
+	fetcher := &fetch.Manager{
+		Store: st, Auth: backend.Auth, Sealer: sealer, Log: log,
+		Pipe: &ingest.Pipeline{Store: st, Hub: h, Model: extract.Default, Log: log, Retention: *retention},
+		Cfg:  fetch.Config{Interval: *fetchInterval, MaxBytes: *maxBytes, AllowPrivate: *fetchPrivate || *dev, Insecure: *dev},
+	}
+	apiSrv.Fetch = fetcher
+	go fetcher.Run(ctx)
 
 	smtpSrv := smtpd.NewServer(backend)
 	smtpSrv.Addr = *smtpAddr

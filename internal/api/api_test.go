@@ -61,6 +61,10 @@ func (passAuth) Check(_ net.IP, _, _, fromHdr string, _ []byte) mailauth.Result 
 	return mailauth.Result{Verdict: mailauth.Pass, Detail: "test", Domain: mailauth.FromDomain(fromHdr)}
 }
 
+func (passAuth) CheckRelayed(_ net.IP, fromHdr string, _ []byte) mailauth.Result {
+	return mailauth.Result{Verdict: mailauth.Pass, Detail: "test, relayed", Domain: mailauth.FromDomain(fromHdr)}
+}
+
 type testWriter struct{ t *testing.T }
 
 func (w testWriter) Write(p []byte) (int, error) {

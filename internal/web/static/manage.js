@@ -25,8 +25,98 @@ function recordsTable(domain) {
 
 // --- addresses ---
 
+// --- other mailboxes ---
+
+const kindName = { forward: 'Forwarding', imap: 'Polled over IMAP', jmap: 'Polled over JMAP' };
+
+// mailboxesSection lists the user's other mailboxes that feed codes
+// here, and the two ways of linking one. forwardTo is an address of
+// theirs on this server to suggest as the forwarding target.
+function mailboxesSection(data, forwardTo) {
+  const card = (src) => {
+    const polled = src.kind !== 'forward';
+    const box = h('div', { class: 'card', style: 'gap:10px' });
+    const draw = (s) => fill(box,
+      h('div', { class: 'row between' }, h('div', { class: 'mono wrap' }, s.address), h('span', { class: 'pill off' }, kindName[s.kind])),
+      polled && h('div', { class: 'muted small wrap' }, `${s.username} at ${s.host}`,
+        s.last_checked ? ` · looked ${ago(s.last_checked)}` : ' · not looked at yet'),
+      polled && s.last_error ? h('div', { class: 'notice warn', role: 'alert' }, `The last look failed: ${s.last_error}`) : null,
+      !polled && h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.codes_only, onchange: (e) => act(async () => {
+        const res = await api('PATCH', `/api/v1/sources/${s.id}`, { codes_only: e.target.checked });
+        draw(res.source);
+        toast('Saved');
+      }) }), 'Keep only messages with a code or link, and drop the rest'),
+      h('div', { class: 'row' },
+        polled && h('button', { type: 'button', onclick: () => act(async () => {
+          const res = await api('POST', `/api/v1/sources/${s.id}/check`);
+          draw(res.source);
+          toast(res.source.last_error ? 'That did not work' : 'Looked just now');
+        }) }, 'Look now'),
+        h('button', { class: 'danger', type: 'button', onclick: () => confirm(polled
+          ? `Stop looking in ${s.address}? Its password is deleted from this server.`
+          : `Unlink ${s.address}? Mail forwarded from it will be treated like any other mail.`) && act(async () => {
+          await api('DELETE', `/api/v1/sources/${s.id}`);
+          reload();
+        }) }, polled ? 'Remove' : 'Unlink')));
+    draw(src);
+    return box;
+  };
+
+  const fwdAddress = h('input', { type: 'email', placeholder: 'you@example.com', required: true, autocapitalize: 'none', spellcheck: false });
+  const fwdCodesOnly = h('input', { type: 'checkbox', checked: true });
+  const forward = h('form', { class: 'stack', onsubmit: (e) => {
+    e.preventDefault();
+    act(async () => {
+      await api('POST', '/api/v1/sources', { address: fwdAddress.value, kind: 'forward', codes_only: fwdCodesOnly.checked });
+      reload();
+    });
+  } },
+    h('div', { class: 'row end' }, field('The mailbox you will forward from', fwdAddress), h('button', { type: 'submit' }, 'Link mailbox')),
+    h('label', { class: 'check' }, fwdCodesOnly, 'Keep only messages with a code or link, and drop the rest'));
+
+  const kind = h('select', {}, h('option', { value: 'imap' }, 'IMAP (most providers)'), h('option', { value: 'jmap' }, 'JMAP (Fastmail and others)'));
+  const pollAddress = h('input', { type: 'email', placeholder: 'you@example.com', required: true, autocapitalize: 'none', spellcheck: false });
+  const host = h('input', { type: 'text', placeholder: 'imap.example.com', required: true, autocapitalize: 'none', spellcheck: false });
+  const username = h('input', { type: 'text', placeholder: 'Same as the address', autocapitalize: 'none', spellcheck: false, autocomplete: 'off' });
+  const password = h('input', { type: 'password', required: true, autocomplete: 'new-password' });
+  const passwordLabel = h('span', {}, 'App password');
+  kind.addEventListener('change', () => {
+    const jmap = kind.value === 'jmap';
+    host.placeholder = jmap ? 'https://api.example.com/jmap/session' : 'imap.example.com';
+    username.placeholder = jmap ? 'Leave empty when using an API token' : 'Same as the address';
+    passwordLabel.textContent = jmap ? 'API token or password' : 'App password';
+  });
+  const poll = h('form', { class: 'stack', onsubmit: (e) => {
+    e.preventDefault();
+    act(async () => {
+      await api('POST', '/api/v1/sources', { address: pollAddress.value, kind: kind.value, host: host.value, username: username.value, password: password.value });
+      toast('Signed in. New codes from that mailbox will appear here.');
+      reload();
+    });
+  } },
+    h('div', { class: 'row end' }, field('Kind', kind), field('Mailbox address', pollAddress), field('Server', host)),
+    h('div', { class: 'row end' }, field('Username', username), h('label', { class: 'field' }, passwordLabel, password),
+      h('button', { type: 'submit' }, 'Sign in and link')));
+
+  return h('section', { class: 'card', 'aria-label': 'Your other mailboxes' },
+    h('h2', {}, 'Your other mailboxes'),
+    h('p', { class: 'muted small' }, 'Codes sent to an email address you already have can show up here too. Link the mailbox, then either forward its mail here or let this server look in it.'),
+    data.sources.map(card),
+    h('details', {},
+      h('summary', {}, 'Forward from a mailbox'),
+      h('p', { class: 'muted small' }, 'First link the mailbox below, so mail that comes through it is recognised. Then, in that mailbox, set up a rule or automatic forwarding to ',
+        forwardTo ? h('span', { class: 'mono' }, forwardTo) : 'one of your addresses here',
+        '. Forward only sign-in mail if your provider lets you choose; otherwise forward everything and keep the option below on. Some providers email a confirmation code to the forwarding address first: it will arrive here like any other code.'),
+      forward),
+    data.polling ? h('details', {},
+      h('summary', {}, 'Let this server look in a mailbox'),
+      h('div', { class: 'notice warn' }, 'This server stores the password and could read the whole mailbox with it. Only do this on a server you trust, and use an app password or API token you can revoke, not your main password.'),
+      h('p', { class: 'muted small' }, 'The server looks in the inbox and the junk folder every few seconds and copies only new messages that contain a sign-in code or confirmation link. It changes nothing in the mailbox and does not mark anything as read. Outlook.com and Microsoft 365 no longer accept passwords for this; forward from those instead.'),
+      poll) : null);
+}
+
 export async function addressesView() {
-  const data = await api('GET', '/api/v1/addresses');
+  const [data, sources] = await Promise.all([api('GET', '/api/v1/addresses'), api('GET', '/api/v1/sources')]);
   const me = data.username;
   const claimable = [...data.shared_domains.filter((d) => d.allow_aliases), ...data.domains.filter((d) => d.verified)];
 
@@ -125,7 +215,9 @@ export async function addressesView() {
       });
     } }, field('Domain', newDomain), h('button', { type: 'submit' }, 'Add a domain')));
 
-  return h('section', { class: 'page' }, h('h1', {}, 'Addresses'), builtIn, aliases, domains);
+  const mailbox = data.shared_domains.find((d) => d.allow_mailbox);
+  const forwardTo = mailbox ? `${me}@${mailbox.name}` : (data.aliases[0] || {}).address;
+  return h('section', { class: 'page' }, h('h1', {}, 'Addresses'), builtIn, aliases, mailboxesSection(sources, forwardTo), domains);
 }
 
 // --- devices ---

@@ -18,6 +18,7 @@ import (
 
 	"github.com/tikaydaes/codemail/internal/extract"
 	"github.com/tikaydaes/codemail/internal/hub"
+	"github.com/tikaydaes/codemail/internal/ingest"
 	"github.com/tikaydaes/codemail/internal/mailauth"
 	"github.com/tikaydaes/codemail/internal/mailmsg"
 	"github.com/tikaydaes/codemail/internal/store"
@@ -156,60 +157,121 @@ func (s *session) Data(r io.Reader) error {
 		// Keep the message anyway so the user can still read it.
 		s.b.Log.Warn("parse message", "from", s.from, "err", err)
 	}
-	auth := mailauth.Result{Verdict: mailauth.None, Domain: mailauth.FromDomain(in.From)}
-	if s.b.Auth != nil {
-		auth = s.b.Auth.Check(s.remote, s.helo, s.from, in.From, raw)
-		if auth.Verdict == mailauth.Fail {
-			if v, _ := s.b.Store.GetSetting(ctx, "reject_auth_fail"); v == "1" {
-				return errAuthFail
+	headers := mailmsg.Headers(raw)
+	pipe := s.b.pipeline()
+
+	// Evaluated at most once each, and only if some recipient needs it.
+	var direct, relayed *mailauth.Result
+	var found, foundInner *ingest.Found
+	check := func(viaMailbox bool, from string) mailauth.Result {
+		switch {
+		case s.b.Auth == nil:
+			return mailauth.Result{Verdict: mailauth.None, Domain: mailauth.FromDomain(from)}
+		case viaMailbox:
+			if relayed == nil {
+				r := s.b.Auth.CheckRelayed(s.remote, from, raw)
+				relayed = &r
 			}
+			return *relayed
 		}
-	}
-	res := s.b.Model.Extract(in)
-	confidence := 0.0
-	for _, c := range res.Candidates {
-		if (c.Value == res.Code || c.Value == res.Link) && c.Score > confidence {
-			confidence = c.Score
+		if direct == nil {
+			r := s.b.Auth.Check(s.remote, s.helo, s.from, from, raw)
+			direct = &r
 		}
+		return *direct
 	}
-	now := time.Now()
+
+	// Decide every recipient's copy first, so that a rejection is for the
+	// whole message and nothing is stored twice on a retry.
+	type copyFor struct {
+		d ingest.Delivery
+		f ingest.Found
+	}
+	var copies []copyFor
 	for uid, rc := range s.rcpts {
-		retention := s.b.Cfg.Retention
-		if u, err := s.b.Store.UserByID(ctx, uid); err == nil && u.Retention > 0 {
-			retention = u.Retention
-		}
-		service, flags := res.Service, ""
-		if a := rc.alias; a != nil {
-			if a.Label != "" {
-				service = a.Label
+		d := ingest.Delivery{UserID: uid, Rcpt: rc.addr, Alias: rc.alias, MailFrom: s.from, In: in, Raw: raw}
+		src, byHand := s.b.forwardedFrom(ctx, uid, s.from, in.From, headers)
+		switch {
+		case src != nil && byHand:
+			// The user's own mail program wrapped the original, so nothing
+			// about the original sender can be checked.
+			d.Via = ingest.FlagForwarded
+			d.In, _ = mailmsg.Unforward(in)
+			d.Auth = mailauth.Result{Verdict: mailauth.None, Domain: mailauth.FromDomain(d.In.From),
+				Detail: "forwarded by hand from " + src.Address + "; the original sender cannot be verified"}
+			if foundInner == nil {
+				f := pipe.Extract(d.In)
+				foundInner = &f
 			}
-			// A generated alias belongs to one service. Remember its first
-			// sender and flag anyone else: the address has leaked.
-			if a.Generated && auth.Domain != "" {
-				switch a.ExpectedSender {
-				case "":
-					s.b.Store.SetAliasSender(ctx, a.ID, auth.Domain)
-				case auth.Domain:
-				default:
-					flags = "unexpected_sender"
+			copies = append(copies, copyFor{d, *foundInner})
+		default:
+			if src != nil {
+				d.Via = ingest.FlagForwarded
+			}
+			d.Auth = check(src != nil, in.From)
+			if d.Auth.Verdict == mailauth.Fail && src == nil {
+				if v, _ := s.b.Store.GetSetting(ctx, "reject_auth_fail"); v == "1" {
+					return errAuthFail
+				}
+			}
+			if found == nil {
+				f := pipe.Extract(in)
+				found = &f
+			}
+			copies = append(copies, copyFor{d, *found})
+		}
+		// A mailbox that forwards everything would otherwise fill the
+		// account with ordinary mail. Accept it, but keep only codes.
+		if src != nil && src.CodesOnly && !copies[len(copies)-1].f.HasCode() {
+			copies = copies[:len(copies)-1]
+			s.b.Log.Info("forwarded message without a code dropped", "rcpt", rc.addr, "source", src.Address)
+		}
+	}
+	for _, c := range copies {
+		if _, err := pipe.Deliver(ctx, c.d, c.f); err != nil {
+			s.b.Log.Error("save message", "rcpt", c.d.Rcpt, "err", err)
+			return errTemp
+		}
+	}
+	return nil
+}
+
+func (b *Backend) pipeline() *ingest.Pipeline {
+	return &ingest.Pipeline{Store: b.Store, Hub: b.Hub, Model: b.Model, Log: b.Log, Retention: b.Cfg.Retention}
+}
+
+// The headers a forwarding mailbox leaves its own address in.
+var forwardHeaders = []string{"Delivered-To", "X-Forwarded-For", "X-Forwarded-To", "X-Original-To", "Resent-From",
+	"Resent-To", "X-Forwarded-Encrypted", "To", "Cc"}
+
+// forwardedFrom reports whether a message for the user came through one
+// of the mailboxes they have linked, and whether they forwarded it by
+// hand (so that it is From their own address).
+func (b *Backend) forwardedFrom(ctx context.Context, userID int64, mailFrom, fromHdr string, headers []mailmsg.Field) (src *store.Source, byHand bool) {
+	sources, err := b.Store.ListSources(ctx, userID)
+	if err != nil || len(sources) == 0 {
+		return nil, false
+	}
+	from := mailmsg.Address(fromHdr)
+	for i := range sources {
+		if from != "" && from == strings.ToLower(sources[i].Address) {
+			return &sources[i], true
+		}
+	}
+	for i := range sources {
+		addr := sources[i].Address
+		if mailmsg.Mentions(mailFrom, addr) {
+			return &sources[i], false
+		}
+		for _, f := range headers {
+			for _, name := range forwardHeaders {
+				if f.Is(name) && mailmsg.Mentions(f.Value, addr) {
+					return &sources[i], false
 				}
 			}
 		}
-		m := &store.Message{
-			UserID: uid, Rcpt: rc.addr, MailFrom: s.from, FromHdr: in.From, Subject: in.Subject,
-			Service: service, Code: res.Code, Link: res.Link, Confidence: confidence,
-			Auth: auth.Verdict, AuthDetail: auth.Detail, Flags: flags,
-			Raw: raw, ReceivedAt: now, ExpiresAt: now.Add(retention),
-		}
-		if err := s.b.Store.SaveMessage(ctx, m); err != nil {
-			s.b.Log.Error("save message", "rcpt", rc.addr, "err", err)
-			return errTemp
-		}
-		s.b.Hub.Publish(hub.Event{UserID: uid, Type: "message", MessageID: m.ID})
-		s.b.Log.Info("message stored", "id", m.ID, "rcpt", rc.addr, "service", service,
-			"has_code", res.Code != "", "has_link", res.Link != "", "auth", auth.Verdict)
 	}
-	return nil
+	return nil, false
 }
 
 func (s *session) Reset()        { s.from, s.rcpts = "", nil }

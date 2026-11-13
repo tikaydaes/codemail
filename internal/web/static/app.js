@@ -2,6 +2,10 @@ import { h, fill, api, toast, act, copy, showCode, ago, day, dateTime, field, pa
 import { renderMarkdown } from '/md.js';
 import { addressesView, devicesView, settingsView, adminView } from '/manage.js';
 
+// Mail that came through one of the user's other mailboxes, by forwarding
+// or because this server fetched it.
+const viaMailbox = (m) => m.flags.includes('forwarded') || m.flags.includes('fetched');
+
 const root = document.getElementById('app');
 export const state = { me: null, server: null, limits: null, live: false, onEvent: null, timer: null };
 
@@ -284,6 +288,7 @@ async function messagesView(kind) {
         h('div', { class: 'muted small wrap' }, m.subject || '(no subject)'),
         h('div', { class: 'muted small wrap' }, `${m.rcpt} · ${ago(m.received_at)}`, m.used_at ? ' · used' : '')),
       m.flags.includes('unexpected_sender') && h('span', { class: 'pill warn' }, 'Unexpected sender'),
+      viaMailbox(m) && m.auth !== 'pass' && h('span', { class: 'pill warn' }, 'Sender not verified'),
       m.code ? h('div', { class: 'code-mid' }, showCode(m.code))
         : m.link ? h('div', { class: 'muted small' }, 'Link to ', m.link_host) : null,
       actionButton(m, false));
@@ -326,7 +331,7 @@ async function messagesView(kind) {
       return;
     }
     const m = detail;
-    const authText = { pass: 'Verified (SPF or DKIM passed)', fail: 'Failed: this may not be from who it claims', none: 'Not checked' }[m.auth];
+    const authText = { pass: viaMailbox(m) ? 'Verified' : 'Verified (SPF or DKIM passed)', fail: 'Failed: this may not be from who it claims', none: viaMailbox(m) ? 'Could not be verified' : 'Not checked' }[m.auth];
     fill(aside, 
       h('div', { class: 'row between' },
         h('div', { class: 'grow' }, h('h2', { style: 'font-size:18px' }, m.subject || '(no subject)'), h('div', { class: 'muted small wrap' }, m.from)),
@@ -334,6 +339,8 @@ async function messagesView(kind) {
       m.flags.includes('unexpected_sender') && h('div', { class: 'notice warn', role: 'alert' },
         'This address was generated for another sender. It may have been leaked or sold.'),
       m.auth === 'fail' && h('div', { class: 'notice danger', role: 'alert' }, 'The sender could not be verified. Treat this message with suspicion.'),
+      viaMailbox(m) && m.auth === 'none' && h('div', { class: 'notice warn', role: 'alert' },
+        `This message ${m.flags.includes('fetched') ? 'was fetched from' : 'was forwarded from'} your other mailbox, and nothing on it proves who sent it. Check it is what you expected before using the code.`),
       h('dl', { class: 'facts' },
         h('dt', {}, 'To'), h('dd', {}, m.rcpt),
         h('dt', {}, 'Received'), h('dd', {}, dateTime(m.received_at)),

@@ -212,6 +212,23 @@ ALTER TABLE sessions_new RENAME TO sessions;
 -- so two parts of an app renewing at the same moment do not sign it out.
 ALTER TABLE devices ADD COLUMN prev_refresh_hash BLOB;
 ALTER TABLE devices ADD COLUMN rotated_at INTEGER NOT NULL DEFAULT 0;
+`, `
+-- Other mailboxes a user forwards from or has the server poll.
+CREATE TABLE sources (
+	id           INTEGER PRIMARY KEY,
+	user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	address      TEXT NOT NULL,
+	kind         TEXT NOT NULL,
+	codes_only   BOOLEAN NOT NULL DEFAULT TRUE,
+	host         TEXT NOT NULL DEFAULT '',
+	username     TEXT NOT NULL DEFAULT '',
+	secret       BLOB,
+	state        TEXT NOT NULL DEFAULT '',
+	last_checked INTEGER NOT NULL DEFAULT 0,
+	last_error   TEXT NOT NULL DEFAULT '',
+	created_at   INTEGER NOT NULL,
+	UNIQUE (user_id, address, kind)
+);
 `}
 
 // forPostgres translates the SQLite-flavoured schema above.

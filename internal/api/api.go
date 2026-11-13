@@ -41,7 +41,8 @@ type Server struct {
 	Model extract.Model
 	DNS   dnscheck.Resolver
 	Log   *slog.Logger
-	Web   fs.FS // the built web app
+	Web   fs.FS   // the built web app
+	Fetch Fetcher // polls linked mailboxes; nil if this server cannot
 	cfg   Config
 	wa    *webauthn.WebAuthn
 
@@ -115,6 +116,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+a+"/domains", s.session(s.handleAddDomain))
 	mux.HandleFunc("POST "+a+"/domains/{id}/check", s.session(s.handleCheckDomain))
 	mux.HandleFunc("DELETE "+a+"/domains/{id}", s.session(s.handleDeleteDomain))
+
+	mux.HandleFunc("GET "+a+"/sources", s.auth(s.handleSources))
+	mux.HandleFunc("POST "+a+"/sources", s.limited(s.session(s.handleAddSource)))
+	mux.HandleFunc("PATCH "+a+"/sources/{id}", s.limited(s.session(s.handleUpdateSource)))
+	mux.HandleFunc("DELETE "+a+"/sources/{id}", s.session(s.handleDeleteSource))
+	mux.HandleFunc("POST "+a+"/sources/{id}/check", s.limited(s.session(s.handleCheckSource)))
 
 	mux.HandleFunc("GET "+a+"/devices", s.auth(s.handleDevices))
 	mux.HandleFunc("DELETE "+a+"/devices/{id}", s.session(s.handleDeleteDevice))

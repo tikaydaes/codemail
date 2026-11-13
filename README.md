@@ -28,6 +28,9 @@ no AI model.
 - Connects apps and browser extensions with OAuth or a QR code.
 - Converts every message to Markdown for display, so mail cannot run
   code, load remote images or track you. The original stays downloadable.
+- Takes codes from a mailbox you already have: forward them from it, or
+  let the server look in it over IMAP or JMAP. See
+  [Codes from a mailbox you already have](#codes-from-a-mailbox-you-already-have).
 - Deletes mail automatically (7 days by default).
 
 A Flutter app for Android, iOS, macOS, Windows and Linux is in `app/`,
@@ -60,6 +63,10 @@ knowing what you are trusting:
   into.
 - It runs the code in this repository, but you cannot check that from
   outside.
+
+- If you let it look in another mailbox of yours, it holds that mailbox's
+  password. Its operators could then read everything in that mailbox, not
+  only the codes.
 
 The same goes for any Codemail server someone else runs for you. Use a
 hosted server only if you trust the people behind it, and prefer your own
@@ -162,6 +169,45 @@ Codemail only receives mail. Every address on a domain you point at it is
 handled by Codemail, so use a domain or subdomain that does not also need
 ordinary mailboxes.
 
+## Codes from a mailbox you already have
+
+Many accounts are already tied to an address you cannot change. Under
+Addresses, "Your other mailboxes" links such a mailbox in one of two
+ways. Neither needs anything from this server's administrator.
+
+**Forwarding.** Link the mailbox's address, then set up a rule or
+automatic forwarding in that mailbox to one of your Codemail addresses.
+Each linked mailbox has a switch, on by default, to keep only messages
+with a code or link and drop the rest, so a forward-everything rule does
+not copy your whole inbox. Turn it off if you forward only selected mail
+and want all of it kept. Messages you forward by hand work too: the
+original sender is read from the quoted header.
+
+**Polling.** Give the server the mailbox's IMAP or JMAP address and an
+app password or API token. It signs in, looks in the inbox and the junk
+folder every 20 seconds (and at once when the extension is waiting for a
+code), and copies only new messages that carry a code or link. Folders
+are opened read-only and nothing is marked as read. Mail from before the
+mailbox was linked is not touched.
+
+- Use an app password or token you can revoke. The server stores it
+  encrypted with a key kept in `fetch.key` in the data directory, but it
+  has to be able to use it, so whoever runs the server can too.
+- Outlook.com and Microsoft 365 no longer accept passwords for IMAP. Use
+  forwarding for those.
+- A hosted server refuses mailbox servers on private addresses. If your
+  mail server is on your own network, start Codemail with
+  `-fetch-allow-private`. `-fetch-interval` changes how often it looks.
+
+**Is the sender still verified?** Mail that comes through another mailbox
+no longer arrives from the sender's own server, so the usual check cannot
+be made. Codemail verifies the sender's DKIM signature itself and, failing
+that, uses the verdict your mailbox provider recorded when it received
+the message, if that record is where the provider would have put it. If
+neither vouches for the sender, the message is still shown but marked
+"Sender not verified", and the extension will not offer its code on a
+website by itself.
+
 ## Backup and upgrade
 
 All state is in the data directory. To back up while the server is
@@ -169,8 +215,11 @@ running:
 
     ./codemail backup -data /var/lib/codemail /backups/codemail-$(date +%F).db
 
-writes a consistent copy of the database. To upgrade, replace the binary;
-the database is migrated on start.
+writes a consistent copy of the database. If anyone has linked a mailbox
+for polling, also keep a copy of `fetch.key` from the data directory:
+without it the stored mailbox passwords cannot be read and have to be
+entered again. To upgrade, replace the binary; the database is migrated on
+start.
 
 ## PostgreSQL (optional)
 

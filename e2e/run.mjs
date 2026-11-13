@@ -118,6 +118,18 @@ await step('addresses: generate and claim', async () => {
   await page.getByText('Waiting for DNS').waitFor({ timeout: 5000 });
   await shot('06-addresses');
 });
+await step('addresses: link another mailbox for forwarding', async () => {
+  await page.getByText('Forward from a mailbox').click();
+  await page.getByLabel('The mailbox you will forward from').fill('Me@Mailbox.example');
+  await page.getByRole('button', { name: 'Link mailbox' }).click();
+  const card = page.locator('.card', { hasText: 'me@mailbox.example' }).last();
+  await card.getByText('Forwarding', { exact: true }).waitFor({ timeout: 5000 });
+  if (!(await card.getByRole('checkbox').isChecked())) throw new Error('a forwarding mailbox should start as codes only');
+  await page.getByText('Let this server look in a mailbox').click();
+  await page.getByText('could read the whole mailbox').waitFor({ timeout: 5000 });
+  await page.getByText('Your other mailboxes').scrollIntoViewIfNeeded();
+  await shot('06b-mailboxes');
+});
 await step('devices: QR pairing', async () => {
   await page.getByRole('link', { name: 'Devices' }).click();
   await page.getByRole('button', { name: 'Add device' }).click();

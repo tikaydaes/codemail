@@ -181,6 +181,33 @@ type MessageQuery struct {
 	Limit  int
 }
 
+// Source kinds.
+const (
+	SourceForward = "forward" // the user forwards mail from it to one of their addresses
+	SourceIMAP    = "imap"    // the server polls it over IMAP
+	SourceJMAP    = "jmap"    // the server polls it over JMAP
+)
+
+// MaxSources is how many mailboxes one user may link.
+const MaxSources = 10
+
+// Source is another mailbox of the user's that feeds their codes here:
+// one they forward from, or one the server polls.
+type Source struct {
+	ID          int64
+	UserID      int64
+	Address     string // the mailbox's own address, e.g. me@example.com
+	Kind        string
+	CodesOnly   bool   // keep only messages with a code or link; always true when polled
+	Host        string // IMAP: host:port. JMAP: the session URL.
+	Username    string
+	Secret      []byte // the password or token, encrypted by the fetcher
+	State       string // the fetcher's position, JSON
+	LastChecked time.Time
+	LastError   string
+	CreatedAt   time.Time
+}
+
 type Correction struct {
 	ID        int64
 	MessageID int64
@@ -281,6 +308,19 @@ type Store interface {
 	DeleteMessage(ctx context.Context, userID, id int64) error
 	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
 	CountMessagesSince(ctx context.Context, userID int64, since time.Time) (int, error)
+
+	// AddSource fails with ErrTaken if the user already linked that address
+	// the same way, and ErrLimit past MaxSources.
+	AddSource(ctx context.Context, src *Source) error
+	ListSources(ctx context.Context, userID int64) ([]Source, error)
+	// PolledSources returns every user's IMAP and JMAP sources.
+	PolledSources(ctx context.Context) ([]Source, error)
+	GetSource(ctx context.Context, userID, id int64) (Source, error)
+	// UpdateSource stores CodesOnly, Host, Username and Secret.
+	UpdateSource(ctx context.Context, src Source) error
+	// SetSourceState records the outcome of one poll.
+	SetSourceState(ctx context.Context, id int64, state string, checked time.Time, lastError string) error
+	DeleteSource(ctx context.Context, userID, id int64) error
 
 	AddCorrection(ctx context.Context, c Correction) error
 	ListCorrections(ctx context.Context) ([]Correction, error)

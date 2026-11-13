@@ -31,6 +31,10 @@ type Result struct {
 // Checker evaluates one received message.
 type Checker interface {
 	Check(remote net.IP, helo, mailFrom, fromHdr string, raw []byte) Result
+	// CheckRelayed is for mail that came through the recipient's own
+	// mailbox: forwarded from it (remote is the forwarding server) or
+	// fetched from it (remote is nil). See relayed.go.
+	CheckRelayed(remote net.IP, fromHdr string, raw []byte) Result
 }
 
 // OrgDomain returns the registrable domain of a host, e.g.

@@ -57,6 +57,41 @@ sign-in codes and confirmation links, and delivers them to your devices.
 Mail with no code or link is kept in "Other mail" with the same expiry and
 never triggers a notification.
 
+### Mail from a user's other mailboxes
+
+A user can link mailboxes they already have (`sources`). Mail from them
+joins the pipeline at step 4 through the same code (`internal/ingest`).
+
+- **Forwarded.** A message for a user counts as forwarded when one of
+  their linked addresses appears in the envelope sender or in the headers
+  a forwarding mailbox leaves behind (`Delivered-To`, `X-Forwarded-For`,
+  `To` and similar). It is never rejected for failing the sender check,
+  does not count as the first sender of a generated alias, and is dropped
+  if it has no code or link and the mailbox is set to codes only. A
+  message From the linked address itself was forwarded by hand: the
+  original sender and subject are read from the quoted header block and
+  the sender is recorded as unverifiable.
+- **Fetched.** `internal/fetch` keeps one connection per polled mailbox
+  (IMAP via go-imap, JMAP over plain HTTP), looks every 20 seconds or when
+  a client asks for codes for a site, and takes in only messages with a
+  code or link. The first look at a folder only records where it ends.
+  Folders are opened read-only with `BODY.PEEK`. Passwords are sealed
+  with AES-256-GCM under a key file beside the database. Connections to
+  private addresses are refused after name resolution unless the
+  operator allows them.
+- **Sender check for both.** SPF means nothing once another server has
+  relayed the message. The sender's DKIM signature is verified here; if
+  it does not vouch for the From domain, the mailbox provider's own
+  `Authentication-Results` (or ARC equivalent) is used, but only a header
+  that sits below one of that provider's `Received` lines and names that
+  provider, and for forwarded mail only when the connecting server's
+  reverse DNS confirms it is that provider. A verdict the original sender
+  wrote is further down and is ignored. A provider that neither records
+  a verdict nor strips forged ones could still be fooled; such mail then
+  shows as verified when it should not. Mail nothing vouches for is kept,
+  flagged `forwarded` or `fetched` with result `none`, and shown as
+  "Sender not verified".
+
 ## 4. Addressing and domains
 
 | Address                    | Goes to                   | Requires                          |
@@ -138,6 +173,8 @@ from one backend to the other.
 |                 | auth result, raw, received_at, expires_at, used_at             |
 | `corrections`   | message, kind, correct value, created_at                       |
 | `site_links`    | user, sender domain, site domain (learned by the extension)    |
+| `sources`       | user, mailbox address, kind (forward, imap, jmap), codes only, |
+|                 | server, username, sealed password, poll position, last error   |
 | `settings`      | registration mode, limits, retention cap                       |
 | `audit_log`     | actor, action, target, at                                      |
 
@@ -286,6 +323,9 @@ shows the domain it opens and whether that matches the sender.
 - Mail is not encrypted at rest in the first version; the server must read
   it to extract codes. Use disk encryption. Short retention (default 7
   days, user-adjustable up to an admin cap) limits exposure.
+- A polled mailbox's password is stored sealed, but the server can open
+  it, so the operator can read that whole mailbox. The web app says so
+  where the password is entered.
 - Rate limits on SMTP, sign-in, OAuth and invite attempts. All
   administrative actions go to the audit log.
 - Strict Content-Security-Policy; no third-party scripts, fonts or
