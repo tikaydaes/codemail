@@ -513,6 +513,8 @@ func TestEverything(t *testing.T) {
 	if err := e.send("A <a@a.example>", "whatever@sam.example", "s", "b"); err != nil {
 		t.Errorf("mail to a verified own domain: %v", err)
 	}
+	// On his own domain nothing is reserved: every address is his anyway.
+	sam.must(201, "POST", "/api/v1/aliases", map[string]any{"local": "info", "domain_id": domID, "label": "Enquiries"})
 	if status, _ := kaity.do("POST", "/api/v1/domains", map[string]any{"name": "sam.example"}); status != 409 {
 		t.Errorf("claiming someone else's domain = %d, want 409", status)
 	}

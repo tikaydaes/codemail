@@ -57,12 +57,16 @@ func set(names ...string) map[string]bool {
 	return m
 }
 
+// WellFormed reports whether s has the shape of a name.
+func WellFormed(s string) bool { return nameRe.MatchString(s) }
+
 // ValidUsername reports whether s can be a username. A username only
 // signs someone in and is never an address, so no name is reserved.
-func ValidUsername(s string) bool { return nameRe.MatchString(s) }
+func ValidUsername(s string) bool { return WellFormed(s) }
 
-// ValidAlias reports whether s can be the name of a claimed address.
-func ValidAlias(s string) bool { return nameRe.MatchString(s) && !reserved[s] }
+// ValidAlias reports whether s can be the name of an address claimed on
+// a shared domain.
+func ValidAlias(s string) bool { return WellFormed(s) && !reserved[s] }
 
 // SplitAddress lower-cases an address and splits it at the last "@".
 func SplitAddress(addr string) (local, host string, ok bool) {

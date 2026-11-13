@@ -102,15 +102,17 @@ func scanAlias(row interface{ Scan(...any) error }) (store.Alias, error) {
 
 func (s *DB) ClaimAlias(ctx context.Context, a *store.Alias) error {
 	a.Local = strings.ToLower(strings.TrimSpace(a.Local))
-	if !store.ValidAlias(a.Local) {
-		return fmt.Errorf("%w: address name %q", store.ErrInvalidName, a.Local)
-	}
 	d, err := s.DomainByID(ctx, a.DomainID)
 	if err != nil {
 		return err
 	}
 	a.Domain = d.Name
 	own := d.OwnerID == a.UserID
+	// Names are reserved on shared domains, where an address could pass as
+	// the operator. On a user's own domain every address is theirs anyway.
+	if !store.WellFormed(a.Local) || !own && !store.ValidAlias(a.Local) {
+		return fmt.Errorf("%w: address name %q", store.ErrInvalidName, a.Local)
+	}
 	if !d.Verified || (!own && (d.OwnerID != 0 || !d.AllowAliases)) {
 		return fmt.Errorf("%w: aliases on %s", store.ErrNotAllowed, d.Name)
 	}
