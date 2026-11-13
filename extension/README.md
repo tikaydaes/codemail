@@ -47,14 +47,26 @@ in developer mode: open `chrome://extensions`, turn on Developer mode,
 choose Load unpacked and pick `dist/chrome`. The browser may remind you
 on start-up that a developer-mode extension is active.
 
-**Firefox.** For a quick try, open `about:debugging`, choose This Firefox,
+**Firefox.** Each release has a signed `codemail-firefox-<version>.xpi`
+attached: open it in Firefox, or drag it onto a Firefox window, and it
+stays installed. It is signed by Mozilla as an "unlisted" add-on, which
+does not put it in their store.
+
+To try a build of your own, open `about:debugging`, choose This Firefox,
 then Load Temporary Add-on and pick `dist/firefox/manifest.json`; it is
 removed when Firefox closes. Release versions of Firefox only keep
-extensions that Mozilla has signed. Signing does not require listing in
-their store: with a free addons.mozilla.org account you can sign your own
-build as "unlisted" and install the resulting file anywhere:
+extensions that Mozilla has signed. With a free addons.mozilla.org account
+you can sign your own build the same way. Change the add-on ID in
+`build.mjs` first, since an ID belongs to the account that first signed
+it, and give the API credentials from your account's developer page:
 
-    npx web-ext sign -s dist/firefox --channel unlisted --api-key ... --api-secret ...
+    WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=... \
+      npx web-ext sign -s dist/firefox --channel unlisted
+
+Mozilla signs each version number once. The release workflow does this
+when a version tag is pushed, using the `AMO_JWT_ISSUER` and
+`AMO_JWT_SECRET` repository secrets, and the tag must match `version` in
+`manifest.json`.
 
 Firefox Developer Edition, Nightly and ESR can instead turn off the
 signature requirement (`xpinstall.signatures.required` in `about:config`).
