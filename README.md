@@ -19,9 +19,10 @@ no AI model.
   ships inside the binary.
 - Shows codes live in a web app: copy with one click, see who really sent
   the message, and whether a link goes to the sender's own domain.
-- Gives every user several kinds of address: `you@domain`,
-  `you+tag@domain`, `anything@you.domain`, names you claim, and
-  unguessable addresses generated per service that warn you if they leak.
+- Gives users addresses they choose: `name@domain`, which also accepts
+  `name+tag@domain` and `anything@name.domain`, and unguessable addresses
+  generated per service that warn you if they leak. A username only signs
+  you in; it is never an address, so it cannot clash with one.
 - Lets users bring their own domains, verified by DNS.
 - Signs people in with passkeys only. Registration can be open, by invite
   code, or closed.
@@ -118,7 +119,7 @@ DNS, for a server at `mail.example.com` handling mail for `example.com`:
 |------|-----------------|---------------------|----------------------------------|
 | A    | mail.example.com | your server's IP   | The web app and the mail server  |
 | MX   | example.com     | 10 mail.example.com | Mail for `name@example.com`      |
-| MX   | *.example.com   | 10 mail.example.com | Mail for `anything@you.example.com` |
+| MX   | *.example.com   | 10 mail.example.com | Mail for `anything@name.example.com` |
 
 The web app and the mail domain can be the same name (for example both
 `example.com`); then the A record goes on `example.com` and the MX

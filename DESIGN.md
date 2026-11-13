@@ -97,11 +97,16 @@ joins the pipeline at step 4 through the same code (`internal/ingest`).
 | Address                    | Goes to                   | Requires                          |
 |----------------------------|---------------------------|-----------------------------------|
 | `anything@owned.example`   | the domain's owner        | user-owned, verified domain       |
-| `alias(+tag)@shared`       | whoever claimed the alias | shared domain, `allow_aliases`    |
-| `username(+tag)@shared`    | that user                 | shared domain, `allow_mailbox`    |
-| `anything@username.shared` | that user                 | shared domain, `allow_subdomains` |
+| `name(+tag)@shared`        | whoever claimed or generated `name@shared` | shared domain, `allow_aliases` |
+| `anything@name.shared`     | whoever claimed `name@shared` | shared domain, `allow_subdomains` |
 
-- **Shared domains** are added by an admin, who sets the three flags and a
+A username is a sign-in name only and is never an address. Every address
+on a shared domain is one a user claimed or generated, first come first
+served per domain, so a username and an address cannot collide and a new
+account receives nothing until it claims its first address. A generated
+address is for one service and has no subdomain.
+
+- **Shared domains** are added by an admin, who sets the two flags and a
   per-user limit on claimed aliases. Subdomain addressing needs a wildcard
   MX record.
 - **User-owned domains.** A user adds a domain and is shown two records:
@@ -286,7 +291,7 @@ Confirmation links are never opened automatically.
   recent codes are available from the toolbar popup only. This is the
   defence against a phishing page harvesting a code.
 - On sign-up forms it can fill a new address for the site
-  (`sitename@username.shared` or a claimed alias).
+  (`sitename@name.shared` or a claimed alias).
 
 ## 11. UI
 

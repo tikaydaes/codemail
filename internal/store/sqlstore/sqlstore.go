@@ -229,6 +229,14 @@ CREATE TABLE sources (
 	created_at   INTEGER NOT NULL,
 	UNIQUE (user_id, address, kind)
 );
+`, `
+-- A username is now only a sign-in name. Where it used to be an address
+-- as well, it becomes an ordinary claimed address, so no mail is lost.
+INSERT INTO aliases (domain_id, local, user_id, label, generated, created_at)
+SELECT d.id, u.username, u.id, '', FALSE, u.created_at FROM users u, domains d
+WHERE d.owner_id IS NULL AND d.allow_mailbox
+	AND NOT EXISTS (SELECT 1 FROM aliases a WHERE a.domain_id = d.id AND a.local = u.username);
+ALTER TABLE domains DROP COLUMN allow_mailbox;
 `}
 
 // forPostgres translates the SQLite-flavoured schema above.

@@ -227,7 +227,6 @@ func (s *Server) handleAdminRecoveryCode(w http.ResponseWriter, r *http.Request,
 
 type sharedDomainBody struct {
 	Name            string
-	AllowMailbox    *bool `json:"allow_mailbox"`
 	AllowAliases    *bool `json:"allow_aliases"`
 	AllowSubdomains *bool `json:"allow_subdomains"`
 	MaxAliases      *int  `json:"max_aliases"`
@@ -235,9 +234,6 @@ type sharedDomainBody struct {
 }
 
 func (b sharedDomainBody) apply(d *store.Domain) {
-	if b.AllowMailbox != nil {
-		d.AllowMailbox = *b.AllowMailbox
-	}
 	if b.AllowAliases != nil {
 		d.AllowAliases = *b.AllowAliases
 	}
@@ -272,7 +268,7 @@ func (s *Server) handleAdminAddDomain(w http.ResponseWriter, r *http.Request, u 
 	if !decode(w, r, &body) {
 		return
 	}
-	d := store.Domain{Name: body.Name, Verified: true, AllowMailbox: true, AllowAliases: true, AllowSubdomains: true, MaxAliases: 20}
+	d := store.Domain{Name: body.Name, Verified: true, AllowAliases: true, AllowSubdomains: true, MaxAliases: 20}
 	body.apply(&d)
 	if err := s.Store.AddDomain(r.Context(), &d); err != nil {
 		s.failErr(w, err)

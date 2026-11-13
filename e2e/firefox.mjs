@@ -102,7 +102,11 @@ const createAccount = async () => {
   await page.getByRole('link', { name: 'Admin' }).click();
   await page.getByLabel('Domain', { exact: true }).fill('codes.example');
   await page.getByRole('button', { name: 'Add shared domain' }).click();
-  await page.getByText('username@codes.example, with +tags').waitFor();
+  await page.getByText('Claim and generate addresses on codes.example').waitFor();
+  // A username only signs the user in; mail needs an address they claim.
+  await page.getByRole('link', { name: 'Addresses' }).click();
+  await page.getByRole('button', { name: 'Claim address' }).click();
+  await page.getByText(`${user}@codes.example`).first().waitFor();
   const cookie = (await ctx.cookies(origin))[0];
   await browser.close();
   return cookie;

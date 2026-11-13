@@ -311,7 +311,7 @@ async function messagesView(kind) {
       rest.length ? h('div', { class: 'section-label' }, fresh ? 'Earlier' : q ? 'Results' : kind === 'code' ? 'Recent' : 'Messages') : null,
       rest.length ? h('div', { class: 'list' }, rest.map(row))
         : !fresh && h('div', { class: 'list' }, h('div', { class: 'empty' },
-          q ? 'Nothing matches that search.' : kind === 'code' ? 'No codes yet. Mail sent to your addresses appears here the moment it arrives.' : 'Mail without a code or link appears here.')));
+          q ? 'Nothing matches that search.' : kind === 'code' ? ['No codes yet. Mail sent to your addresses appears here the moment it arrives. No address yet? ', h('a', { href: '#/addresses' }, 'Choose one under Addresses'), '.'] : 'Mail without a code or link appears here.')));
   }
 
   function close() {

@@ -22,7 +22,7 @@ var copyTables = []struct {
 	{"devices", nil, true},
 	{"grants", []string{"confirmed"}, false},
 	{"invites", nil, false},
-	{"domains", []string{"verified", "allow_mailbox", "allow_aliases", "allow_subdomains"}, true},
+	{"domains", []string{"verified", "allow_aliases", "allow_subdomains"}, true},
 	{"aliases", []string{"generated"}, true},
 	{"messages", nil, true},
 	{"corrections", nil, true},

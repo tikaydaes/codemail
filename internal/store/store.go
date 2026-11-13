@@ -19,15 +19,15 @@ var (
 	ErrNotAllowed  = errors.New("not allowed")
 )
 
-// nameRe limits usernames and alias names to DNS-label-safe names so they
-// can double as mailbox names and subdomains.
+// nameRe limits usernames and alias names to DNS-label-safe names, so an
+// alias name can double as a subdomain.
 var nameRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$`)
 
 var reserved = map[string]bool{
 	"postmaster": true, "abuse": true, "admin": true, "administrator": true,
 	"root": true, "hostmaster": true, "webmaster": true, "noreply": true,
 	"no-reply": true, "mailer-daemon": true, "security": true, "support": true,
-	// Usernames double as subdomains (anything@username.domain), so names
+	// Alias names double as subdomains (anything@name.domain), so names
 	// that are commonly real hosts on a domain are kept free.
 	"www": true, "mail": true, "mx": true, "smtp": true, "imap": true, "pop": true,
 	"ns": true, "ns1": true, "ns2": true, "api": true, "app": true, "ftp": true,
@@ -122,9 +122,8 @@ type Domain struct {
 	OwnerID         int64
 	Verified        bool
 	VerifyToken     string
-	AllowMailbox    bool // username(+tag)@domain
-	AllowAliases    bool // claimed and generated aliases
-	AllowSubdomains bool // anything@username.domain
+	AllowAliases    bool // users may claim and generate addresses
+	AllowSubdomains bool // anything@name.domain for each claimed name@domain
 	MaxAliases      int  // claimed aliases per user, 0 = unlimited
 	MaxGenerated    int  // generated aliases per user, 0 = unlimited
 	LastChecked     time.Time

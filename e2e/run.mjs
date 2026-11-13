@@ -44,7 +44,11 @@ await step('admin adds shared domain', async () => {
   await page.getByRole('heading', { name: 'Admin', exact: true }).waitFor();
   await page.getByLabel('Domain', { exact: true }).fill('codes.example');
   await page.getByRole('button', { name: 'Add shared domain' }).click();
-  await page.getByText('username@codes.example, with +tags').waitFor({ timeout: 5000 });
+  await page.getByText('Claim and generate addresses on codes.example').waitFor({ timeout: 5000 });
+  // A username only signs the user in; mail needs an address they claim.
+  await page.getByRole('link', { name: 'Addresses' }).click();
+  await page.getByRole('button', { name: 'Claim address' }).click();
+  await page.getByText('kaity@codes.example').first().waitFor({ timeout: 5000 });
   await shot('03-admin');
 });
 await step('code arrives live', async () => {
@@ -109,7 +113,7 @@ await step('addresses: generate and claim', async () => {
   await page.getByText('Generated · no mail yet').waitFor({ timeout: 5000 });
   await page.getByLabel('Name', { exact: true }).fill('shop');
   await page.getByRole('button', { name: 'Claim address' }).click();
-  await page.getByText('shop@codes.example').waitFor({ timeout: 5000 });
+  await page.getByText('shop@codes.example').first().waitFor({ timeout: 5000 });
   promptAnswer = 'Online shopping';
   await page.getByRole('row', { name: /shop@codes\.example/ }).getByRole('button', { name: 'Rename' }).click();
   await page.getByRole('row', { name: /shop@codes\.example/ }).getByText('Online shopping').waitFor({ timeout: 5000 });

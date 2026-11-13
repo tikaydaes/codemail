@@ -55,7 +55,11 @@ await step('create account and connect the extension', async () => {
   await page.getByRole('link', { name: 'Admin' }).click();
   await page.getByLabel('Domain', { exact: true }).fill('codes.example');
   await page.getByRole('button', { name: 'Add shared domain' }).click();
-  await page.getByText('username@codes.example, with +tags').waitFor();
+  await page.getByText('Claim and generate addresses on codes.example').waitFor();
+  // A username only signs the user in; mail needs an address they claim.
+  await page.getByRole('link', { name: 'Addresses' }).click();
+  await page.getByRole('button', { name: 'Claim address' }).click();
+  await page.getByText('kaity@codes.example').first().waitFor();
   // Connect the way a user does: enter the server in the popup, approve
   // on the server's page in the tab that opens, and let the extension
   // pick up the result.

@@ -143,7 +143,6 @@ http.Client fakeClient({List<String>? calls}) => MockClient.streaming((
         {
           'id': 1,
           'name': 'codes.example',
-          'allow_mailbox': true,
           'allow_aliases': true,
           'allow_subdomains': true,
         },
@@ -158,6 +157,12 @@ http.Client fakeClient({List<String>? calls}) => MockClient.streaming((
           'label': 'Northwind Bank',
           'generated': true,
           'expected_sender': 'northwind.example',
+        },
+        {
+          'id': 4,
+          'address': 'kaity@codes.example',
+          'label': '',
+          'generated': false,
         },
       ],
     });

@@ -581,16 +581,22 @@ class _AddressesPageState extends State<AddressesPage> {
           return const Center(child: CircularProgressIndicator());
         }
         final builtIn = <(String, String)>[
-          for (final d in data.sharedDomains) ...[
-            if (d.allowMailbox) ('${data.username}@${d.name}', 'Your mailbox'),
-            if (d.allowMailbox)
-              ('${data.username}+anything@${d.name}', 'Add a tag per service'),
-            if (d.allowSubdomains)
+          // An address the user chose on a shared domain also takes tags
+          // and, where the domain offers it, a subdomain.
+          for (final a in data.aliases.where((a) => !a.generated))
+            for (final d in data.sharedDomains.where(
+              (d) => a.address.endsWith('@${d.name}'),
+            )) ...[
               (
-                'anything@${data.username}.${d.name}',
-                'For sites that reject "+"',
+                '${a.address.split('@').first}+anything@${d.name}',
+                'Add a tag per service',
               ),
-          ],
+              if (d.allowSubdomains)
+                (
+                  'anything@${a.address.split('@').first}.${d.name}',
+                  'For sites that reject "+"',
+                ),
+            ],
           for (final d in data.ownDomains) ('anything@$d', 'Your own domain'),
         ];
         return ListView(

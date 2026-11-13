@@ -12,13 +12,13 @@ import (
 
 // --- domains ---
 
-const domainCols = `id, name, COALESCE(owner_id, 0), verified, verify_token, allow_mailbox, allow_aliases,
+const domainCols = `id, name, COALESCE(owner_id, 0), verified, verify_token, allow_aliases,
 	allow_subdomains, max_aliases, max_generated, last_checked, failing_since, created_at`
 
 func scanDomain(row interface{ Scan(...any) error }) (store.Domain, error) {
 	var d store.Domain
 	var checked, failing, created int64
-	err := row.Scan(&d.ID, &d.Name, &d.OwnerID, &d.Verified, &d.VerifyToken, &d.AllowMailbox, &d.AllowAliases,
+	err := row.Scan(&d.ID, &d.Name, &d.OwnerID, &d.Verified, &d.VerifyToken, &d.AllowAliases,
 		&d.AllowSubdomains, &d.MaxAliases, &d.MaxGenerated, &checked, &failing, &created)
 	d.LastChecked, d.FailingSince, d.CreatedAt = tm(checked), tm(failing), tm(created)
 	return d, one(err)
@@ -52,10 +52,10 @@ func (s *DB) AddDomain(ctx context.Context, d *store.Domain) error {
 	}
 	d.CreatedAt = time.Now()
 	return taken(s.db.QueryRowContext(ctx, `
-		INSERT INTO domains (name, owner_id, verified, verify_token, allow_mailbox, allow_aliases,
+		INSERT INTO domains (name, owner_id, verified, verify_token, allow_aliases,
 			allow_subdomains, max_aliases, max_generated, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		d.Name, owner, d.Verified, d.VerifyToken, d.AllowMailbox, d.AllowAliases,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		d.Name, owner, d.Verified, d.VerifyToken, d.AllowAliases,
 		d.AllowSubdomains, d.MaxAliases, d.MaxGenerated, ts(d.CreatedAt)).Scan(&d.ID))
 }
 
@@ -78,9 +78,9 @@ func (s *DB) AllDomains(ctx context.Context) ([]store.Domain, error) { return s.
 
 func (s *DB) UpdateDomain(ctx context.Context, d store.Domain) error {
 	return changed(s.db.ExecContext(ctx, `
-		UPDATE domains SET verified = ?, allow_mailbox = ?, allow_aliases = ?, allow_subdomains = ?,
+		UPDATE domains SET verified = ?, allow_aliases = ?, allow_subdomains = ?,
 			max_aliases = ?, max_generated = ?, last_checked = ?, failing_since = ? WHERE id = ?`,
-		d.Verified, d.AllowMailbox, d.AllowAliases, d.AllowSubdomains, d.MaxAliases, d.MaxGenerated,
+		d.Verified, d.AllowAliases, d.AllowSubdomains, d.MaxAliases, d.MaxGenerated,
 		ts(d.LastChecked), ts(d.FailingSince), d.ID))
 }
 
@@ -115,12 +115,6 @@ func (s *DB) ClaimAlias(ctx context.Context, a *store.Alias) error {
 		return fmt.Errorf("%w: aliases on %s", store.ErrNotAllowed, d.Name)
 	}
 	if !own {
-		if d.AllowMailbox {
-			// A mailbox name always belongs to the user with that username.
-			if u, err := s.UserByName(ctx, a.Local); err == nil && u.ID != a.UserID {
-				return store.ErrTaken
-			}
-		}
 		limit := d.MaxAliases
 		if a.Generated {
 			limit = d.MaxGenerated
@@ -185,13 +179,14 @@ func (s *DB) aliasAt(ctx context.Context, domainID int64, local string) (*store.
 	return &a, err
 }
 
-// Resolve maps a recipient address to the user who receives it.
+// Resolve maps a recipient address to the user who receives it. A
+// username is a sign-in name and never an address: on a shared domain
+// every address is one somebody claimed or generated.
 //
-//	anything@owned.example   -> the domain's owner
-//	alias(+tag)@shared       -> whoever claimed the alias
-//	username(+tag)@shared    -> that user
-//	postmaster@shared        -> the first admin
-//	anything@username.shared -> that user
+//	anything@owned.example -> the domain's owner
+//	name(+tag)@shared      -> whoever claimed or generated name@shared
+//	postmaster@shared      -> the first admin
+//	anything@name.shared   -> whoever claimed name@shared
 func (s *DB) Resolve(ctx context.Context, addr string) (store.Recipient, error) {
 	none := store.Recipient{}
 	local, host, ok := store.SplitAddress(addr)
@@ -226,9 +221,6 @@ func (s *DB) Resolve(ctx context.Context, addr string) (store.Recipient, error) 
 				return store.Recipient{UserID: id}, nil
 			}
 		}
-		if d.AllowMailbox {
-			return s.recipientByName(ctx, local)
-		}
 		return none, store.ErrNoRecipient
 	case errors.Is(err, store.ErrNotFound):
 		dot := strings.IndexByte(host, '.')
@@ -242,21 +234,22 @@ func (s *DB) Resolve(ctx context.Context, addr string) (store.Recipient, error) 
 		if err != nil {
 			return none, err
 		}
-		if p.OwnerID != 0 || !p.Verified || !p.AllowSubdomains {
+		if p.OwnerID != 0 || !p.Verified || !p.AllowSubdomains || !p.AllowAliases {
 			return none, store.ErrNoRecipient
 		}
-		return s.recipientByName(ctx, host[:dot])
+		// The subdomain belongs to an address someone chose. A generated
+		// address is for one service and has no subdomain.
+		alias, err := s.aliasAt(ctx, p.ID, host[:dot])
+		if err != nil {
+			return none, err
+		}
+		if alias == nil || alias.Generated {
+			return none, store.ErrNoRecipient
+		}
+		return store.Recipient{UserID: alias.UserID, Alias: alias}, nil
 	default:
 		return none, err
 	}
-}
-
-func (s *DB) recipientByName(ctx context.Context, username string) (store.Recipient, error) {
-	u, err := s.UserByName(ctx, username)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Recipient{}, store.ErrNoRecipient
-	}
-	return store.Recipient{UserID: u.ID}, err
 }
 
 // --- messages ---

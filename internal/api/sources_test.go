@@ -166,7 +166,8 @@ func TestSources(t *testing.T) {
 	if status, out := sam.register("sam", map[string]any{"setup": setup}); status != 200 {
 		t.Fatalf("register = %d %v", status, out)
 	}
-	sam.must(201, "POST", "/api/v1/admin/domains", map[string]any{"name": "codes.example"})
+	dom := sam.must(201, "POST", "/api/v1/admin/domains", map[string]any{"name": "codes.example"})["domain"].(map[string]any)
+	sam.must(201, "POST", "/api/v1/aliases", map[string]any{"local": "sam", "domain_id": dom["id"]})
 
 	deliver := func(envelopeFrom, raw string) {
 		t.Helper()

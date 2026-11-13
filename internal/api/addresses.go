@@ -26,7 +26,7 @@ func aliasJSON(a store.Alias) map[string]any {
 func (s *Server) domainJSON(d store.Domain, mx, txt *bool) map[string]any {
 	out := map[string]any{
 		"id": d.ID, "name": d.Name, "shared": d.OwnerID == 0, "verified": d.Verified,
-		"allow_mailbox": d.AllowMailbox, "allow_aliases": d.AllowAliases, "allow_subdomains": d.AllowSubdomains,
+		"allow_aliases": d.AllowAliases, "allow_subdomains": d.AllowSubdomains,
 		"max_aliases": d.MaxAliases, "max_generated": d.MaxGenerated,
 		"last_checked": unix(d.LastChecked), "failing_since": unix(d.FailingSince),
 	}

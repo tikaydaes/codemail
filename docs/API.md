@@ -145,6 +145,6 @@ All *admin*.
 | `GET /admin/invites`, `POST /admin/invites`, `DELETE /admin/invites/{code}` | Invite codes; create with `max_uses` and `expires_days` (0 = unlimited or never). |
 | `GET /admin/users`, `PATCH /admin/users/{id}`, `DELETE /admin/users/{id}` | List, set `is_admin`, delete. |
 | `POST /admin/users/{id}/recovery-code` | Issues one extra recovery code for that user. |
-| `GET /admin/domains`, `POST /admin/domains`, `PATCH /admin/domains/{id}`, `DELETE /admin/domains/{id}` | Shared domains and their rules: `allow_mailbox`, `allow_aliases`, `allow_subdomains`, `max_aliases`, `max_generated`. |
+| `GET /admin/domains`, `POST /admin/domains`, `PATCH /admin/domains/{id}`, `DELETE /admin/domains/{id}` | Shared domains and their rules: `allow_aliases`, `allow_subdomains`, `max_aliases`, `max_generated`. |
 | `GET /admin/corrections` | Users' corrections with their messages, one JSON object per line, for `codemail train -corrections`. |
 | `GET /admin/audit?limit=&before=` | Recorded actions, newest first: `id`, `actor`, `action`, `target`, `at`. |

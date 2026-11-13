@@ -120,12 +120,17 @@ export async function addressesView() {
   const me = data.username;
   const claimable = [...data.shared_domains.filter((d) => d.allow_aliases), ...data.domains.filter((d) => d.verified)];
 
-  const builtIn = data.shared_domains.map((d) => h('section', { class: 'card', 'aria-label': `Addresses on ${d.name}` },
-    h('h2', {}, `Always yours on ${d.name}`),
-    h('div', { class: 'grid' },
-      d.allow_mailbox && h('div', { class: 'tile' }, h('div', { class: 'mono small wrap' }, `${me}@${d.name}`), h('div', { class: 'muted small' }, 'Your mailbox')),
-      d.allow_mailbox && h('div', { class: 'tile' }, h('div', { class: 'mono small wrap' }, `${me}+anything@${d.name}`), h('div', { class: 'muted small' }, 'Add a tag per service')),
-      d.allow_subdomains && h('div', { class: 'tile' }, h('div', { class: 'mono small wrap' }, `anything@${me}.${d.name}`), h('div', { class: 'muted small' }, 'For sites that reject "+"')))));
+  // What comes with an address the user chose: tags on any domain, and a
+  // subdomain where a shared domain offers them. Generated addresses are
+  // for one service and have neither.
+  const sharedByName = Object.fromEntries(data.shared_domains.map((d) => [d.name, d]));
+  const extras = (a) => {
+    if (a.generated) return [];
+    const [name, domain] = a.address.split('@');
+    const shared = sharedByName[domain];
+    if (!shared) return []; // on the user's own domain every address is theirs already
+    return [`${name}+anything@${domain}`, shared.allow_subdomains && `anything@${name}.${domain}`].filter(Boolean);
+  };
 
   const domainSelect = () => h('select', {}, claimable.map((d) => h('option', { value: d.id }, '@' + d.name)));
 
@@ -140,7 +145,8 @@ export async function addressesView() {
     });
   } }, field('Service name', genLabel), field('Domain', genDomain), h('button', { class: 'primary', type: 'submit' }, 'Generate address'));
 
-  const local = h('input', { type: 'text', placeholder: 'travel', required: true, autocapitalize: 'none', spellcheck: false });
+  // The first address is most naturally the user's own name.
+  const local = h('input', { type: 'text', placeholder: 'travel', required: true, autocapitalize: 'none', spellcheck: false, value: data.aliases.length ? '' : me });
   const claimDomain = domainSelect();
   const label = h('input', { type: 'text', placeholder: 'Airlines and hotels' });
   const claim = h('form', { class: 'row end', onsubmit: (e) => {
@@ -156,7 +162,8 @@ export async function addressesView() {
     data.aliases.length ? h('div', { class: 'tablebox' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, 'Address'), h('th', {}, 'For'), h('th', {}, 'Created'), h('th', {}, h('span', { hidden: true }, 'Actions')))),
       h('tbody', {}, data.aliases.map((a) => h('tr', {},
-        h('td', { class: 'mono small wrap' }, a.address),
+        h('td', { class: 'mono small wrap' }, a.address,
+          extras(a).map((x) => h('div', { class: 'muted' }, 'also ', x))),
         h('td', {}, a.label || h('span', { class: 'muted' }, 'No label'),
           a.generated ? h('div', { class: 'muted small' }, a.expected_sender ? `Generated · expects ${a.expected_sender}` : 'Generated · no mail yet') : null),
         h('td', { class: 'muted' }, day(a.created_at)),
@@ -174,12 +181,15 @@ export async function addressesView() {
             await api('DELETE', `/api/v1/aliases/${a.id}`);
             reload();
           }) }, 'Release')))))))
-      : h('p', { class: 'muted' }, 'You have not created any addresses yet.'),
+      : h('div', { class: 'notice warn' }, claimable.length
+        ? 'You have no address yet, so no mail can reach you. Your username only signs you in; choose your first address below.'
+        : 'You have no address yet, so no mail can reach you.'),
     claimable.length ? [
       h('h3', {}, 'One address per service'),
       h('p', { class: 'muted small' }, 'Name the service and get an unguessable address just for it. If anyone else ever writes to that address, you will be warned.'),
       generate,
       h('h3', {}, 'Choose your own'),
+      h('p', { class: 'muted small' }, 'An address you choose also accepts tags (name+anything@…) and, where the domain offers it, anything@name.domain for sites that reject "+".'),
       claim,
     ] : h('p', { class: 'muted' }, 'No domain on this server allows extra addresses yet.'));
 
@@ -215,9 +225,8 @@ export async function addressesView() {
       });
     } }, field('Domain', newDomain), h('button', { type: 'submit' }, 'Add a domain')));
 
-  const mailbox = data.shared_domains.find((d) => d.allow_mailbox);
-  const forwardTo = mailbox ? `${me}@${mailbox.name}` : (data.aliases[0] || {}).address;
-  return h('section', { class: 'page' }, h('h1', {}, 'Addresses'), builtIn, aliases, mailboxesSection(sources, forwardTo), domains);
+  const forwardTo = (data.aliases.find((a) => !a.generated) || data.aliases[0] || {}).address;
+  return h('section', { class: 'page' }, h('h1', {}, 'Addresses'), aliases, mailboxesSection(sources, forwardTo), domains);
 }
 
 // --- devices ---
@@ -456,10 +465,9 @@ export async function adminView() {
           await api('DELETE', `/api/v1/admin/domains/${d.id}`);
           reload();
         }) }, 'Remove')),
-      h('fieldset', {}, h('legend', {}, 'Users may receive mail at'),
-        flag('allow_mailbox', `username@${d.name}, with +tags`),
-        flag('allow_aliases', 'Addresses they claim or generate'),
-        flag('allow_subdomains', `anything@username.${d.name}`)),
+      h('fieldset', {}, h('legend', {}, 'Users may'),
+        flag('allow_aliases', `Claim and generate addresses on ${d.name}`),
+        flag('allow_subdomains', `Use anything@name.${d.name} for each address they claim`)),
       h('form', { class: 'row end', onsubmit: (e) => {
         e.preventDefault();
         save({ max_aliases: Number(maxAliases.value), max_generated: Number(maxGenerated.value) });

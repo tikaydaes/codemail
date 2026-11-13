@@ -81,13 +81,11 @@ class SharedDomain {
   SharedDomain.fromJson(Map<String, dynamic> j)
     : id = j['id'] as int,
       name = j['name'] as String,
-      allowMailbox = j['allow_mailbox'] as bool? ?? false,
       allowAliases = j['allow_aliases'] as bool? ?? false,
       allowSubdomains = j['allow_subdomains'] as bool? ?? false;
 
   final int id;
   final String name;
-  final bool allowMailbox;
   final bool allowAliases;
   final bool allowSubdomains;
 }

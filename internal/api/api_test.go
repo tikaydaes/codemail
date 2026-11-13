@@ -333,6 +333,15 @@ func TestEverything(t *testing.T) {
 	}()
 	time.Sleep(100 * time.Millisecond) // let the subscription start
 
+	// A username is only a sign-in name. Until the user claims an address
+	// there is nowhere to send them mail.
+	for _, to := range []string{"kaity@codes.example", "kaity+bank@codes.example", "anything@kaity.codes.example"} {
+		if err := e.send("Foo <no-reply@foo.example>", to, "early", "Your verification code is 551234."); err == nil {
+			t.Errorf("mail to %s was accepted before any address was claimed", to)
+		}
+	}
+	kaity.must(201, "POST", "/api/v1/aliases", map[string]any{"local": "kaity", "domain_id": sharedID})
+	// The claimed address also takes +tags and, on this domain, a subdomain.
 	if err := e.send("Foo <no-reply@foo.example>", "kaity+bank@codes.example", "Your Foo code", "Your verification code is 551234. It expires in 10 minutes."); err != nil {
 		t.Fatal(err)
 	}
@@ -349,6 +358,10 @@ func TestEverything(t *testing.T) {
 	}
 	if err := e.send("X <x@x.example>", "nobody@codes.example", "hi", "hi"); err == nil {
 		t.Error("mail to an unknown address was accepted")
+	}
+	// Another user's sign-in name gives them no claim on a matching address.
+	if err := e.send("X <x@x.example>", "sam@codes.example", "hi", "hi"); err == nil {
+		t.Error("mail to a username that has claimed no address was accepted")
 	}
 	codes := list(kaity.must(200, "GET", "/api/v1/messages?kind=code", nil), "messages")
 	other := list(kaity.must(200, "GET", "/api/v1/messages?kind=other", nil), "messages")
@@ -418,11 +431,20 @@ func TestEverything(t *testing.T) {
 		t.Errorf("claiming a taken alias = %d, want 409", status)
 	}
 	if status, _ := sam.do("POST", "/api/v1/aliases", map[string]any{"local": "kaity", "domain_id": sharedID}); status != 409 {
-		t.Errorf("claiming another user's mailbox name = %d, want 409", status)
+		t.Errorf("claiming an address another user holds = %d, want 409", status)
 	}
-	shop := list(kaity.must(200, "GET", "/api/v1/addresses", nil), "aliases")[0].(map[string]any)
+	alias := func(address string) map[string]any {
+		for _, a := range list(kaity.must(200, "GET", "/api/v1/addresses", nil), "aliases") {
+			if a.(map[string]any)["address"] == address {
+				return a.(map[string]any)
+			}
+		}
+		t.Fatalf("no alias %s", address)
+		return nil
+	}
+	shop := alias("shop@codes.example")
 	kaity.must(200, "PATCH", fmt.Sprintf("/api/v1/aliases/%v", shop["id"]), map[string]any{"label": "Shops"})
-	if got := list(kaity.must(200, "GET", "/api/v1/addresses", nil), "aliases")[0].(map[string]any)["label"]; got != "Shops" {
+	if got := alias("shop@codes.example")["label"]; got != "Shops" {
 		t.Errorf("label after edit = %v, want Shops", got)
 	}
 	if status, _ := sam.do("PATCH", fmt.Sprintf("/api/v1/aliases/%v", shop["id"]), map[string]any{"label": "x"}); status != 404 {
@@ -433,6 +455,13 @@ func TestEverything(t *testing.T) {
 	addr := gen["address"].(string)
 	if !strings.HasSuffix(addr, "@codes.example") || strings.Count(addr, "-") != 2 {
 		t.Errorf("generated address = %q", addr)
+	}
+	// A chosen address has a subdomain; one generated for a single service does not.
+	if err := e.send("A <a@a.example>", "x@shop.codes.example", "s", "b"); err != nil {
+		t.Errorf("mail to a claimed address's subdomain: %v", err)
+	}
+	if err := e.send("A <a@a.example>", "x@"+strings.Replace(addr, "@", ".", 1), "s", "b"); err == nil {
+		t.Error("mail to a generated address's subdomain was accepted")
 	}
 	kaity.must(201, "POST", "/api/v1/aliases/generate", map[string]any{"label": "Second"})
 	if status, _ := kaity.do("POST", "/api/v1/aliases/generate", map[string]any{"label": "Third"}); status != 409 {
@@ -532,8 +561,8 @@ func TestEverything(t *testing.T) {
 		t.Errorf("reusing an authorization code = %d, want 400", status)
 	}
 	app := &client{e: e, http: http.DefaultClient, bearer: tok["access_token"].(string)}
-	if got := list(app.must(200, "GET", "/api/v1/messages", nil), "messages"); len(got) != 4 {
-		t.Errorf("app sees %d messages, want 4", len(got))
+	if got := list(app.must(200, "GET", "/api/v1/messages", nil), "messages"); len(got) != 5 {
+		t.Errorf("app sees %d messages, want 5", len(got))
 	}
 	if status, _ := app.do("GET", "/api/v1/passkeys", nil); status != 403 {
 		t.Errorf("app reaching a browser-only endpoint = %d, want 403", status)

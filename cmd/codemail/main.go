@@ -325,9 +325,8 @@ func addDomain(args []string) error {
 	fl := flag.NewFlagSet("domain add", flag.ExitOnError)
 	data := fl.String("data", "./data", "data directory")
 	dbURL := dbFlag(fl)
-	mailbox := fl.Bool("mailbox", true, "allow username@domain")
-	aliases := fl.Bool("aliases", true, "allow claimed and generated aliases")
-	subdomains := fl.Bool("subdomains", true, "allow anything@username.domain")
+	aliases := fl.Bool("aliases", true, "let users claim and generate addresses")
+	subdomains := fl.Bool("subdomains", true, "allow anything@name.domain for each claimed name@domain")
 	maxAliases := fl.Int("max-aliases", 20, "claimed aliases per user, 0 for unlimited")
 	fl.Parse(args)
 	if fl.NArg() != 1 {
@@ -339,7 +338,7 @@ func addDomain(args []string) error {
 	}
 	defer st.Close()
 	return st.AddDomain(context.Background(), &store.Domain{Name: fl.Arg(0), Verified: true,
-		AllowMailbox: *mailbox, AllowAliases: *aliases, AllowSubdomains: *subdomains, MaxAliases: *maxAliases})
+		AllowAliases: *aliases, AllowSubdomains: *subdomains, MaxAliases: *maxAliases})
 }
 
 // recovery prints a new one-time recovery code, for an admin who is
