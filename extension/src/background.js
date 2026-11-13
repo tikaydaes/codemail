@@ -83,12 +83,11 @@ async function finishConnect(tabId, url) {
   if (!pending || !url.startsWith(pending.redirect + '?')) return;
   const params = new URL(url).searchParams;
   await store.remove('pending');
-  api.tabs.remove(tabId).catch(() => {});
-  if (Date.now() - pending.at > 10 * 60 * 1000) return fail('That sign-in took too long. Connect again.');
-  if (params.get('error')) return fail('Access was denied.');
-  const code = params.get('code');
-  if (!code || params.get('state') !== pending.state) return fail('The sign-in returned an unexpected reply.');
   try {
+    if (Date.now() - pending.at > 10 * 60 * 1000) return await fail('That sign-in took too long. Connect again.');
+    if (params.get('error')) return await fail('Access was denied.');
+    const code = params.get('code');
+    if (!code || params.get('state') !== pending.state) return await fail('The sign-in returned an unexpected reply.');
     const tokens = await postToken(pending.server, { grant_type: 'authorization_code', code, code_verifier: pending.verifier, redirect_uri: pending.redirect });
     await saveTokens(pending.server, tokens, { connectError: '' });
     const me = await call('GET', '/api/v1/me');
@@ -96,6 +95,10 @@ async function finishConnect(tabId, url) {
     updateBadge();
   } catch (err) {
     await fail(err.message);
+  } finally {
+    // The tab closes only once the outcome is stored, so a popup opened
+    // the moment it disappears already shows the result.
+    api.tabs.remove(tabId).catch(() => {});
   }
 }
 
