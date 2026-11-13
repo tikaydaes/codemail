@@ -4,6 +4,11 @@ The Codemail client for Android, iOS, macOS, Windows and Linux, written
 in Flutter. It connects to your own Codemail server and shows sign-in
 codes and confirmation links as they arrive.
 
+The server field starts out as `codegrab.me`, the public server run by the
+Codemail developers; replace it with your own server's address if you have
+one. Whoever runs the server can read the mail it receives, so use one you
+trust: see "Whose server?" in the main README.
+
 It is not published in the Apple App Store, Google Play or the Microsoft
 Store. Builds are attached to the project's GitHub releases; the Android
 build contains no Google libraries, so it is suitable for F-Droid.

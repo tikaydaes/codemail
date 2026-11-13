@@ -7,10 +7,11 @@ cd "$(dirname "$0")"
 tmp=$(mktemp -d)
 trap 'kill $pid 2>/dev/null; rm -rf "$tmp"' EXIT
 (cd .. && go build -o "$tmp/codemail" ./cmd/codemail)
-"$tmp/codemail" serve -dev -data "$tmp/data" 2>"$tmp/serve.log" &
+port=${E2E_PORT:-8080}
+"$tmp/codemail" serve -dev -http ":$port" -data "$tmp/data" 2>"$tmp/serve.log" &
 pid=$!
 sleep 1.5
-url=$(grep -o 'http://localhost:8080/#/setup/[A-Za-z0-9_-]*' "$tmp/serve.log")
+url=$(grep -o "http://localhost:$port/#/setup/[A-Za-z0-9_-]*" "$tmp/serve.log")
 rm -rf shots && mkdir shots
 node run.mjs "$url" | tee "$tmp/out.log"
 ! grep -q '^FAIL' "$tmp/out.log"

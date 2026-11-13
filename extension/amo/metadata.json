@@ -1,0 +1,33 @@
+{
+  "slug": "codemail",
+  "summary": {
+    "en-US": "Fills in emailed sign-in codes from a Codemail server: your own, or the public codegrab.me. The code appears under the field that asks for it, and only on the sender's own website."
+  },
+  "description": {
+    "en-US": "Codemail is a small, open-source mail server that only receives. It picks the sign-in code or confirmation link out of each message and keeps the rest out of your way. This extension connects Firefox to a Codemail server, so the code is waiting in the field that asks for it.\n\n**Choose your server carefully**\n\nThe extension needs a Codemail server to talk to. Whoever runs that server can read the mail it receives, and a sign-in code or reset link is often enough to get into an account.\n\n- **Your own server** is the safe choice, and what Codemail is built for. It is free software, a single program with no other services behind it: https://github.com/tikaydaes/codemail\n- **codegrab.me** is a public server run by the Codemail developers, offered as the default for people who cannot host. You are welcome to use it, but you are trusting its operators with your codes. Prefer your own server for accounts that matter.\n\n**What it does**\n\n- When you click into a verification-code field, it waits for the email to arrive and offers the code just under the field. Click Fill and it is typed in, including into fields made of six separate boxes.\n- Confirmation links are offered the same way, with the address they lead to shown before you open them.\n- The toolbar button lists your recent codes and links, with a Copy button for each.\n- It can make a new address for the site you are on, so every sign-up gets its own.\n\n**Built to resist phishing**\n\n- A code is only offered on a website when the email passed sender verification (SPF, DKIM and DMARC) and the sender's domain is that website's domain, or you have linked that sender to the site yourself. On a look-alike site, nothing is offered.\n- The offer is drawn where the page's own scripts cannot read it. The page receives the code only when you click Fill.\n- A link that leads somewhere other than the sender's domain is flagged before it opens.\n\n**Privacy**\n\n- The extension talks to one place only: the server you connect it to. Firefox asks you to allow that one address when you connect.\n- When you focus a code field, the site's hostname is sent to your server to find the matching code. Nothing else about your browsing is sent, and nothing goes to the developer or anyone else.\n- No analytics and no ads.\n\n**Getting started**\n\n1. Set up a Codemail server, or open codegrab.me, and create your account.\n2. Click the Codemail button in the toolbar and enter your server's address (codegrab.me is filled in to start with).\n3. Your server opens in a tab. Sign in with your passkey and choose Allow.\n\nYou can disconnect the browser at any time from the popup or from the Devices page on your server.\n\nCodemail is free software under the GNU Affero General Public License, version 3. Source, documentation and bug reports: https://github.com/tikaydaes/codemail"
+  },
+  "categories": {
+    "firefox": [
+      "privacy-security"
+    ]
+  },
+  "homepage": {
+    "en-US": "https://github.com/tikaydaes/codemail"
+  },
+  "support_url": {
+    "en-US": "https://github.com/tikaydaes/codemail/issues"
+  },
+  "tags": [
+    "privacy",
+    "security",
+    "password manager"
+  ],
+  "requires_payment": false,
+  "version": {
+    "license": "AGPL-3.0-only",
+    "release_notes": {
+      "en-US": "First public release."
+    },
+    "approval_notes": "Codemail connects to a server the user chooses: their own, or the public one at https://codegrab.me, which the popup offers by default. Accounts use passkeys, so there is no shared test login. The most direct way to test is to run the server locally (it is one Go program, source in the same repository):\n\n1. git clone https://github.com/tikaydaes/codemail && cd codemail && go build ./cmd/codemail\n2. ./codemail serve -dev -dev-trust-senders -data /tmp/codemail-data\n   It prints a setup link, http://localhost:8080/#/setup/... Open it in Firefox, pick a username and create a passkey. Under Admin, add a shared domain, for example codes.example.\n3. Click the extension's toolbar button, replace the address with http://localhost:8080 and press Connect. Firefox asks for permission for that one host; the server then opens in a tab. Choose Allow.\n4. The server accepts mail on port 2525 in this mode. Send a message to <username>@codes.example whose From domain matches the site you are testing on, containing a line such as \"Your code is 482913\". Focus an input with autocomplete=\"one-time-code\" on a page of that domain and the code is offered under the field.\n\nThe repository automates exactly this in e2e/firefox.sh.\n\nPermissions: host access is optional and requested at connect time for the single server the user names (https anywhere, or http on localhost/127.0.0.1 for local servers like the one above). The content script runs on all sites because any site may ask for an emailed code; it only looks for code fields, and contacts the background script when one is focused. The site's hostname is then sent to the user's own server, which is the browsingActivity declaration.\n\nSource: the package is the repository's extension/src directory unmodified, plus icons. There is no bundler, minifier or third-party code. extension/build.mjs only copies the files and writes the Firefox form of the manifest."
+  }
+}

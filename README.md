@@ -4,6 +4,10 @@ Codemail is a self-hosted server that receives email for your domains,
 pulls out sign-in codes and confirmation links, and shows them to you the
 moment they arrive.
 
+You can run it yourself, or use the public server at
+[codegrab.me](https://codegrab.me). Read
+[Whose server?](#whose-server) before you choose.
+
 It is one Go binary with an embedded database and web app. It needs no
 other services: no database server, no mail server, no push service and
 no AI model.
@@ -28,7 +32,39 @@ no AI model.
 
 A Flutter app for Android, iOS, macOS, Windows and Linux is in `app/`,
 and a browser extension for Chromium browsers and Firefox is in
-`extension/`. Neither is published in an app store.
+`extension/`. The apps are not published in an app store; the Firefox
+version of the extension is listed on addons.mozilla.org.
+
+## Whose server?
+
+Whoever runs a Codemail server can read every message it receives. For
+this kind of mail that means more than it sounds: a sign-in code or a
+password-reset link is often all it takes to get into an account. The
+operator of your server, and anyone who breaks into it, can take over any
+account that sends its codes there. Nothing in Codemail can prevent that.
+The mail arrives unencrypted, and the server has to read it to find the
+code.
+
+So the safe way to use Codemail is to run it yourself, on a machine you
+control. That is what it is built for.
+
+**codegrab.me** is a public server run by the Codemail developers, for
+people who cannot or do not want to host. The apps and the extension
+offer it as the default server, and you are welcome to use it. Do so
+knowing what you are trusting:
+
+- The people who run it are able to read your mail. Mail is deleted
+  automatically after the retention period, but you have only the
+  operators' word for how the server is run.
+- It is one more place your codes could leak from if it is ever broken
+  into.
+- It runs the code in this repository, but you cannot check that from
+  outside.
+
+The same goes for any Codemail server someone else runs for you. Use a
+hosted server only if you trust the people behind it, and prefer your own
+server for accounts that matter: banking, your main email, anything that
+can reset other passwords.
 
 ## Try it locally
 
@@ -163,6 +199,18 @@ prints a one-time recovery code.
 The web app in `internal/web/static` is plain HTML, CSS and JavaScript
 modules with no build step. `DESIGN.md` describes the architecture and
 `docs/API.md` is the API reference.
+
+## How it was built
+
+Codemail was co-coded with Claude Fable 5.2, Anthropic's AI model, working
+in Claude Code. The maintainer set the requirements, made the design and
+release decisions and tried the result; Fable wrote the server, the apps
+and the extension, wrote and ran the tests, and checked the extension in
+Chromium, Firefox and Safari. Bug reports and corrections are welcome.
+
+Codemail itself uses no AI service when it runs. The part that finds
+codes in messages is a small statistical scorer that ships inside the
+binary, trained on labelled mail.
 
 ## Licence
 

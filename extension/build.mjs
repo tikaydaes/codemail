@@ -17,6 +17,7 @@ const targets = {
   firefox: {
     ...base,
     background: { scripts: ['background.js'] },
+    developer: { name: 'tikaydaes', url: 'https://github.com/tikaydaes/codemail' },
     browser_specific_settings: {
       gecko: {
         id: 'codemail@tikaydaes.github.io',

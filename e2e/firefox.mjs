@@ -20,6 +20,10 @@ const popupURL = `moz-extension://${uuid}/popup.html`;
 // Stand-in websites with code fields, reached by name through Firefox's
 // own "these names are this machine" setting.
 const sitePort = 8099;
+// E2E_USER and E2E_WINDOW (WIDTHxHEIGHT) exist so the screenshots can be
+// retaken for the add-on listing: see extension/amo/README.md.
+const user = process.env.E2E_USER || 'kaity';
+const [winW, winH] = (process.env.E2E_WINDOW || '900x700').split('x').map(Number);
 const site = (title, field) => `<!doctype html><meta charset="utf-8"><title>${title}</title>
   <body style="font:16px system-ui;padding:40px"><h1>${title}</h1><p>Enter the code we emailed you.</p>${field}</body>`;
 const single = '<label>Verification code <input id="code" autocomplete="one-time-code" style="font-size:18px;padding:8px"></label>';
@@ -48,7 +52,7 @@ if (process.env.DEBUG_FIREFOX) service.setStdio('inherit').addArguments('--log',
 const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).setFirefoxService(service).build();
 await driver.installAddon(path.resolve(`../extension/dist/codemail-firefox-${version}.zip`), true);
 
-await driver.manage().window().setRect({ width: 900, height: 700 });
+await driver.manage().window().setRect({ width: winW, height: winH });
 fs.mkdirSync('shots', { recursive: true });
 let failed = 0;
 const step = async (name, fn) => {
@@ -62,7 +66,7 @@ const shot = async (name) => fs.writeFileSync(`shots/${name}.png`, await driver.
 const mail = (from, subject, body, html = '') => execFileSync('python3', ['-c', `
 import smtplib, sys
 from email.message import EmailMessage
-m=EmailMessage(); m['From']=sys.argv[1]; m['To']='kaity@codes.example'; m['Subject']=sys.argv[2]; m.set_content(sys.argv[3])
+m=EmailMessage(); m['From']=sys.argv[1]; m['To']='${user}@codes.example'; m['Subject']=sys.argv[2]; m.set_content(sys.argv[3])
 if sys.argv[4]: m.add_alternative(sys.argv[4], subtype='html')
 s=smtplib.SMTP('127.0.0.1',2525); s.send_message(m); s.quit()`, from, subject, body, html]);
 const code = (n) => mail('Northwind Bank <otp@northwind.example>', 'Your one-time passcode', `Use ${n} to finish signing in. It expires in 10 minutes.`);
@@ -91,7 +95,7 @@ const createAccount = async () => {
   await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await page.goto(setupURL);
-  await page.getByLabel('Username').fill('kaity');
+  await page.getByLabel('Username').fill(user);
   await page.getByRole('button', { name: 'Create passkey' }).click();
   await page.getByLabel('I have saved these codes').check();
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -135,7 +139,9 @@ await step('create account and connect the extension', async () => {
   await find('//a[normalize-space()="Admin"]');
 
   const popup = await openPopup();
-  await (await field('Server address')).sendKeys(origin);
+  const address = await field('Server address');
+  await address.clear();
+  await address.sendKeys(origin);
   const before = await driver.getAllWindowHandles();
   await (await button('Connect')).click();
   let tab;
@@ -153,7 +159,7 @@ await step('create account and connect the extension', async () => {
   if ((await driver.getAllWindowHandles()).includes(tab)) throw new Error('the sign-in tab was not closed');
   await driver.switchTo().window(popup);
   await driver.navigate().refresh();
-  await text('kaity');
+  await text(user);
   await button('Disconnect');
   tokens = await stored();
   if (!tokens.access || tokens.pending) throw new Error('the extension did not finish connecting: ' + JSON.stringify(tokens).slice(0, 200));

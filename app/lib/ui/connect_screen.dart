@@ -17,7 +17,7 @@ class ConnectScreen extends StatefulWidget {
 }
 
 class _ConnectScreenState extends State<ConnectScreen> {
-  final _server = TextEditingController();
+  final _server = TextEditingController(text: defaultServer);
   bool _busy = false;
 
   @override
@@ -84,6 +84,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
                       labelText: 'Server address',
                       hintText: 'mail.example.com',
                       border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$defaultServer is the public server run by the Codemail developers. '
+                    'Whoever runs your server can read the mail it receives, including your sign-in codes, '
+                    'so use one you trust, or run your own.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 16),

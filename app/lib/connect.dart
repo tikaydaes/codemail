@@ -16,6 +16,9 @@ String get _deviceName {
   }
 }
 
+/// The public server offered when the user has not named their own.
+const defaultServer = 'codegrab.me';
+
 /// Signs this device in with OAuth: the user approves it in their browser,
 /// where they sign in with a passkey, and the browser hands a one-time
 /// code back to the app.

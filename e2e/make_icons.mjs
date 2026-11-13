@@ -112,6 +112,7 @@ fs.mkdirSync('../extension/icons', { recursive: true });
 await write('../extension/icons/16.png', 16, 'small');
 await write('../extension/icons/32.png', 32, 'small');
 await write('../extension/icons/48.png', 48, 'rounded');
+await write('../extension/icons/96.png', 96, 'rounded');
 await write('../extension/icons/128.png', 128, 'rounded');
 
 // Platform icon sets, then replace the smallest macOS sizes, where the

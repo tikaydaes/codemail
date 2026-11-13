@@ -422,6 +422,8 @@ void main() {
     await tester.pump();
     expect(find.text('Connect to your server'), findsOneWidget);
     expect(find.text('Sign in with your browser'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'codegrab.me'), findsOneWidget);
+    expect(find.textContaining('can read the mail it receives'), findsOneWidget);
     await screenshot(tester, 'phone-connect');
   });
 }

@@ -42,8 +42,11 @@ async function currentSite() {
   }
 }
 
+// The public server offered when the user has not named their own.
+const defaultServer = 'codegrab.me';
+
 function connectView(error) {
-  const server = el('input', { type: 'text', placeholder: 'mail.example.com', autocapitalize: 'none', spellcheck: 'false' });
+  const server = el('input', { type: 'text', value: defaultServer, placeholder: 'mail.example.com', autocapitalize: 'none', spellcheck: 'false' });
   const status = el('p', { class: error ? 'error' : 'muted' }, error || 'Your browser opens your server so you can sign in with your passkey and approve this extension.');
   const form = el('form', { onsubmit: async (e) => {
     e.preventDefault();
@@ -80,8 +83,11 @@ function connectView(error) {
       status.textContent = err.message;
     }
   } }, el('label', {}, 'Server address', server), el('button', { class: 'primary', type: 'submit', style: 'margin-top:10px;width:100%' }, 'Connect'));
-  put(el('p', {}, 'Connect to your Codemail server.'), form, status);
+  put(el('p', {}, 'Connect to your Codemail server.'), form,
+    el('p', { class: 'muted' }, `${defaultServer} is the public server run by the Codemail developers. Whoever runs your server can read the mail it receives, including your sign-in codes, so use one you trust, or run your own.`),
+    status);
   server.focus();
+  server.select();
 }
 
 function messageItem(m, site, refresh) {

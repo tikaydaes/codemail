@@ -5,8 +5,8 @@ for them, and gives you recent codes and per-site addresses from the
 toolbar.
 
 One codebase for Chromium browsers (Chrome, Edge, Brave, Vivaldi, Opera),
-Firefox and Safari. It is not published in the Chrome Web Store, on
-addons.mozilla.org or in the Mac App Store.
+Firefox and Safari. The Firefox version is listed on addons.mozilla.org.
+It is not published in the Chrome Web Store or the Mac App Store.
 
 ## What it does
 
@@ -47,26 +47,21 @@ in developer mode: open `chrome://extensions`, turn on Developer mode,
 choose Load unpacked and pick `dist/chrome`. The browser may remind you
 on start-up that a developer-mode extension is active.
 
-**Firefox.** Each release has a signed `codemail-firefox-<version>.xpi`
-attached: open it in Firefox, or drag it onto a Firefox window, and it
-stays installed. It is signed by Mozilla as an "unlisted" add-on, which
-does not put it in their store.
+**Firefox.** Install it from
+https://addons.mozilla.org/firefox/addon/codemail/ and Firefox keeps it up
+to date.
 
 To try a build of your own, open `about:debugging`, choose This Firefox,
 then Load Temporary Add-on and pick `dist/firefox/manifest.json`; it is
 removed when Firefox closes. Release versions of Firefox only keep
 extensions that Mozilla has signed. With a free addons.mozilla.org account
-you can sign your own build the same way. Change the add-on ID in
-`build.mjs` first, since an ID belongs to the account that first signed
-it, and give the API credentials from your account's developer page:
+you can sign your own build as "unlisted", which does not put it in their
+store. Change the add-on ID in `build.mjs` first, since an ID belongs to
+the account that first signed it, and give the API credentials from your
+account's developer page:
 
     WEB_EXT_API_KEY=... WEB_EXT_API_SECRET=... \
       npx web-ext sign -s dist/firefox --channel unlisted
-
-Mozilla signs each version number once. The release workflow does this
-when a version tag is pushed, using the `AMO_JWT_ISSUER` and
-`AMO_JWT_SECRET` repository secrets, and the tag must match `version` in
-`manifest.json`.
 
 Firefox Developer Edition, Nightly and ESR can instead turn off the
 signature requirement (`xpinstall.signatures.required` in `about:config`).
@@ -88,6 +83,10 @@ have been checked by hand in Safari 27; there is no automated Safari test.
 ## Connect
 
 Click the toolbar icon, enter your server's address and choose Connect.
+The field starts out as `codegrab.me`, the public server run by the
+Codemail developers. Whoever runs the server can read the mail it
+receives, including your codes, so use one you trust or run your own: see
+"Whose server?" in the main README.
 Your server's sign-in page opens in a tab; sign in with your passkey and
 approve the extension, and the tab closes by itself. The extension then
 appears under Devices in the web app, where you can disconnect it.
@@ -102,3 +101,26 @@ exchanges for tokens.
 server and checks connecting, filling, six-box fields, the unrelated-site
 refusal, confirmation links, the badge and the popup. `e2e/firefox.sh`
 runs the same checks in an installed Firefox, with a temporary profile.
+
+## Releasing the Firefox version
+
+Bump `version` in `manifest.json`, commit, and push a matching tag
+(`v0.1.2` for version 0.1.2). The `apps` workflow submits that version to
+addons.mozilla.org as a listed add-on, using the `AMO_JWT_ISSUER` and
+`AMO_JWT_SECRET` repository secrets, and does not wait for Mozilla's
+review. Mozilla accepts each version number once.
+
+The store listing lives in `amo/`:
+
+- `metadata.json`: name of the page, summary, description, category,
+  links, licence, and the notes for Mozilla's reviewers. It is sent with
+  every submitted version.
+- `privacy-policy.md`: the privacy policy shown on the listing.
+- `screenshots/`: the pictures and `captions.json`. They come from
+  `e2e/firefox.sh`; retake them with
+  `E2E_USER=alex E2E_WINDOW=760x560 ./firefox.sh` and copy them from
+  `e2e/shots/`.
+
+`node amo/apply.mjs` sends the texts, privacy policy, icon and screenshots
+to Mozilla without submitting a version. Run it after changing any of
+them.
