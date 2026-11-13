@@ -102,9 +102,14 @@ async function finishConnect(tabId, url) {
 // The popup shows this the next time it opens.
 const fail = (message) => store.set({ connectError: message });
 
+// The browser reports one page load as several updates. They are handled
+// one at a time, so that only the first finds the pending connection and
+// exchanges the one-time code; a second exchange would fail and leave an
+// error over a connection that worked.
+let finishing = Promise.resolve();
 api.tabs.onUpdated.addListener((tabId, change, tab) => {
   const url = change.url || (change.status === 'complete' ? tab.url : '');
-  if (url) finishConnect(tabId, url);
+  if (url) finishing = finishing.then(() => finishConnect(tabId, url)).catch(() => {});
 });
 
 async function disconnect() {
