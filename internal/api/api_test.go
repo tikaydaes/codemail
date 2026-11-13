@@ -460,6 +460,11 @@ func TestEverything(t *testing.T) {
 		t.Error("domain verified with only the MX record")
 	}
 	txt := list(dom, "records")[1].(map[string]any)
+	// Advice for a receive-only domain: SPF, DMARC and an empty DKIM key.
+	advice := list(dom, "recommended")
+	if len(advice) != 3 || advice[0].(map[string]any)["value"] != "v=spf1 -all" || advice[1].(map[string]any)["name"] != "_dmarc."+dom["name"].(string) {
+		t.Errorf("recommended records: %v", advice)
+	}
 	dns.txt[txt["name"].(string)] = txt["value"].(string)
 	checked = sam.must(200, "POST", fmt.Sprintf("/api/v1/domains/%d/check", domID), nil)["domain"].(map[string]any)
 	if checked["verified"] != true {

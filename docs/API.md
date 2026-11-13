@@ -71,7 +71,7 @@ A message has `id`, `kind` (`code` if it has a code or link, else
 | `POST /aliases/generate` | Body `label`, optional `domain_id`. Creates an unguessable address for one service. |
 | `PATCH /aliases/{id}` | Body `label`. |
 | `DELETE /aliases/{id}` | Releases the address. |
-| `POST /domains` *browser* | Body `name`. Adds the user's own domain, unverified, and returns the DNS `records` to publish. |
+| `POST /domains` *browser* | Body `name`. Adds the user's own domain, unverified, and returns the DNS `records` to publish, plus `recommended` records (SPF, DMARC and DKIM that reject mail forged as the domain; not checked). |
 | `POST /domains/{id}/check` *browser* | Looks the records up now; each record reports `found`. |
 | `DELETE /domains/{id}` *browser* | Removes the domain. |
 

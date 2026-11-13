@@ -117,6 +117,21 @@ The web app and the mail domain can be the same name (for example both
 `example.com`); then the A record goes on `example.com` and the MX
 records point at it.
 
+Codemail only receives. Unless something else sends mail from the domain,
+also publish records that tell other mail servers to reject anything
+claiming to come from it; otherwise anyone can forge your addresses:
+
+| Type | Name                     | Value                                             | Why |
+|------|--------------------------|---------------------------------------------------|-----|
+| TXT  | example.com              | `v=spf1 -all`                                     | No server may send as this domain |
+| TXT  | *.example.com            | `v=spf1 -all`                                     | The same for `you.example.com`; SPF is not inherited |
+| TXT  | _dmarc.example.com       | `v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s`  | Reject what fails, on the domain and every subdomain |
+| TXT  | *._domainkey.example.com | `v=DKIM1; p=`                                     | No valid signature exists |
+
+The web app lists the same records, with the right names, for every
+domain you or your users add. If you do send mail from the domain, keep
+your existing SPF, DKIM and DMARC records instead.
+
 Start it:
 
     ./codemail serve -hostname mail.example.com -data /var/lib/codemail

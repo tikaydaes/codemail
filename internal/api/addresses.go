@@ -39,6 +39,19 @@ func (s *Server) domainJSON(d store.Domain, mx, txt *bool) map[string]any {
 		records = append(records, map[string]any{"type": "MX", "name": "*." + d.Name, "value": "10 " + s.cfg.MailHost, "found": nil})
 	}
 	out["records"] = records
+
+	// A domain that only receives should tell other mail servers to reject
+	// anything claiming to come from it. These are advice, not checked.
+	const noMail = "v=spf1 -all"
+	recommended := []map[string]any{{"type": "TXT", "name": d.Name, "value": noMail}}
+	if d.AllowSubdomains {
+		// SPF is not inherited by subdomains, and each user's is a mail name.
+		recommended = append(recommended, map[string]any{"type": "TXT", "name": "*." + d.Name, "value": noMail})
+	}
+	recommended = append(recommended,
+		map[string]any{"type": "TXT", "name": "_dmarc." + d.Name, "value": "v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s"},
+		map[string]any{"type": "TXT", "name": "*._domainkey." + d.Name, "value": "v=DKIM1; p="})
+	out["recommended"] = recommended
 	return out
 }
 

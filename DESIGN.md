@@ -295,6 +295,8 @@ shows the domain it opens and whether that matches the sender.
 
 - **DNS:** an A/AAAA record for the server hostname; an MX record on each
   mail domain pointing at it; a wildcard MX for subdomain addressing.
+  Recommended for a domain that sends nothing: SPF `-all`, DMARC
+  `p=reject` and an empty DKIM key, so its addresses cannot be forged.
 - **Ports:** 25 (SMTP), 443 (HTTPS), 80 (ACME and redirect). Many home
   connections block port 25, so a small VPS is the expected host.
 - **TLS:** built-in ACME obtains and renews one certificate for the server

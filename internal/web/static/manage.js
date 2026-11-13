@@ -12,11 +12,15 @@ function statusPill(domain) {
 function recordsTable(domain) {
   const found = (v) => v === true ? h('span', { style: 'color:var(--ok);font-weight:600' }, 'Found')
     : v === false ? h('span', { style: 'color:var(--warn);font-weight:600' }, 'Not found') : h('span', { class: 'muted' }, 'Not checked');
-  return h('div', { class: 'tablebox' }, h('table', {},
-    h('thead', {}, h('tr', {}, ['Type', 'Name', 'Value', 'Status'].map((t) => h('th', {}, t)))),
-    h('tbody', {}, domain.records.map((r) => h('tr', {},
-      h('td', { class: 'mono' }, r.type), h('td', { class: 'mono wrap' }, r.name),
-      h('td', { class: 'mono wrap' }, r.value), h('td', {}, found(r.found)))))));
+  const table = (heads, rows) => h('div', { class: 'tablebox' }, h('table', {},
+    h('thead', {}, h('tr', {}, heads.map((t) => h('th', {}, t)))), h('tbody', {}, rows)));
+  const cells = (r) => [h('td', { class: 'mono' }, r.type), h('td', { class: 'mono wrap' }, r.name), h('td', { class: 'mono wrap' }, r.value)];
+  return h('div', { class: 'stack', style: 'gap:10px' },
+    table(['Type', 'Name', 'Value', 'Status'], domain.records.map((r) => h('tr', {}, cells(r), h('td', {}, found(r.found))))),
+    (domain.recommended || []).length ? h('details', {},
+      h('summary', {}, 'Recommended: stop others sending mail as this domain'),
+      h('p', { class: 'muted small' }, 'Codemail only receives. If nothing else sends mail from this domain, add these records too. They tell other mail servers to reject messages that claim to come from it, so nobody can forge your addresses. Skip them, or keep the records you already have, if you send mail from this domain yourself.'),
+      table(['Type', 'Name', 'Value'], domain.recommended.map((r) => h('tr', {}, cells(r))))) : null);
 }
 
 // --- addresses ---
