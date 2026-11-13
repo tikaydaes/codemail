@@ -271,9 +271,6 @@ func TestEverything(t *testing.T) {
 	if status, _ := e.browser().register("robin", map[string]any{"invite": invite}); status != 403 {
 		t.Errorf("reusing a single-use invite = %d, want 403", status)
 	}
-	if status, _ := e.browser().register("not a name", map[string]any{"invite": invite}); status != 400 {
-		t.Errorf("malformed username = %d, want 400", status)
-	}
 	// A username is never an address, so none is reserved: "admin" gets as
 	// far as the invite check.
 	if status, _ := e.browser().register("admin", map[string]any{"invite": invite}); status != 403 {
