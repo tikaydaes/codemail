@@ -386,7 +386,7 @@ func scanUser(row interface{ Scan(...any) error }) (store.User, error) {
 
 func (s *DB) CreateUser(ctx context.Context, u *store.User) error {
 	u.Username = strings.ToLower(u.Username)
-	if !store.ValidName(u.Username) {
+	if !store.ValidUsername(u.Username) {
 		return fmt.Errorf("%w: username %q", store.ErrInvalidName, u.Username)
 	}
 	if u.CreatedAt.IsZero() {

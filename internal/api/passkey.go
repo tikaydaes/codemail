@@ -123,7 +123,7 @@ func (s *Server) handleRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		name := strings.ToLower(strings.TrimSpace(body.Username))
-		if !store.ValidName(name) {
+		if !store.ValidUsername(name) {
 			s.failErr(w, store.ErrInvalidName)
 			return
 		}

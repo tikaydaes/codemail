@@ -219,7 +219,7 @@ func (s *Server) failErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrTaken):
 		fail(w, http.StatusConflict, "that name is already taken")
 	case errors.Is(err, store.ErrInvalidName):
-		fail(w, http.StatusBadRequest, "names use lowercase letters, digits and hyphens, and some names are reserved")
+		fail(w, http.StatusBadRequest, "names use lowercase letters, digits and hyphens, and some address names are reserved")
 	case errors.Is(err, store.ErrLimit):
 		fail(w, http.StatusConflict, "you have reached the limit for this domain")
 	case errors.Is(err, store.ErrNotAllowed):

@@ -102,7 +102,7 @@ func scanAlias(row interface{ Scan(...any) error }) (store.Alias, error) {
 
 func (s *DB) ClaimAlias(ctx context.Context, a *store.Alias) error {
 	a.Local = strings.ToLower(strings.TrimSpace(a.Local))
-	if !store.ValidName(a.Local) {
+	if !store.ValidAlias(a.Local) {
 		return fmt.Errorf("%w: address name %q", store.ErrInvalidName, a.Local)
 	}
 	d, err := s.DomainByID(ctx, a.DomainID)

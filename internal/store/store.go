@@ -19,23 +19,50 @@ var (
 	ErrNotAllowed  = errors.New("not allowed")
 )
 
-// nameRe limits usernames and alias names to DNS-label-safe names, so an
-// alias name can double as a subdomain.
+// nameRe limits usernames and address names to lower-case letters, digits
+// and inner hyphens, so an address name can double as a subdomain.
 var nameRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$`)
 
-var reserved = map[string]bool{
-	"postmaster": true, "abuse": true, "admin": true, "administrator": true,
-	"root": true, "hostmaster": true, "webmaster": true, "noreply": true,
-	"no-reply": true, "mailer-daemon": true, "security": true, "support": true,
-	// Alias names double as subdomains (anything@name.domain), so names
+// reserved names cannot be claimed as addresses on a shared domain. Some
+// would let their holder pass as the server's operator or receive mail
+// meant for it; others are how certificate authorities and other mail
+// systems reach whoever runs a domain.
+var reserved = set(
+	// Certificate authorities issue for a domain to whoever answers these.
+	"admin", "administrator", "hostmaster", "postmaster", "webmaster",
+	// Standard role addresses (RFC 2142) and their common relatives.
+	"abuse", "noc", "security", "support", "info", "sales", "marketing", "news", "usenet", "uucp", "root", "sysadmin",
+	// Names that read as the operator.
+	"help", "helpdesk", "contact", "billing", "legal", "privacy", "dmca", "compliance", "staff", "team", "official",
+	"moderator", "owner", "system", "service", "status", "codemail",
+	// Automated senders.
+	"noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "daemon", "bounce", "bounces", "nobody",
+	"notifications", "alerts",
+	// Account and sign-in words, the usual dress of a phishing address.
+	"account", "accounts", "login", "signin", "signup", "register", "password", "passkey", "recovery", "verify",
+	"verification", "auth", "oauth", "sso",
+	// Mail and certificate plumbing.
+	"dmarc", "dkim", "spf", "mta-sts", "tls", "ssl", "ssladmin", "certs", "phishing", "spam", "fraud", "trust",
+	// An address name is also a subdomain (anything@name.domain), so names
 	// that are commonly real hosts on a domain are kept free.
-	"www": true, "mail": true, "mx": true, "smtp": true, "imap": true, "pop": true,
-	"ns": true, "ns1": true, "ns2": true, "api": true, "app": true, "ftp": true,
-	"autoconfig": true, "autodiscover": true, "localhost": true,
+	"www", "mail", "mx", "smtp", "imap", "pop", "ns", "ns1", "ns2", "api", "app", "ftp", "autoconfig",
+	"autodiscover", "localhost",
+)
+
+func set(names ...string) map[string]bool {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
 }
 
-// ValidName reports whether s can be a username or alias.
-func ValidName(s string) bool { return nameRe.MatchString(s) && !reserved[s] }
+// ValidUsername reports whether s can be a username. A username only
+// signs someone in and is never an address, so no name is reserved.
+func ValidUsername(s string) bool { return nameRe.MatchString(s) }
+
+// ValidAlias reports whether s can be the name of a claimed address.
+func ValidAlias(s string) bool { return nameRe.MatchString(s) && !reserved[s] }
 
 // SplitAddress lower-cases an address and splits it at the last "@".
 func SplitAddress(addr string) (local, host string, ok bool) {

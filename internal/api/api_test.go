@@ -271,8 +271,13 @@ func TestEverything(t *testing.T) {
 	if status, _ := e.browser().register("robin", map[string]any{"invite": invite}); status != 403 {
 		t.Errorf("reusing a single-use invite = %d, want 403", status)
 	}
-	if status, _ := e.browser().register("admin", map[string]any{"invite": invite}); status != 400 {
-		t.Errorf("reserved username = %d, want 400", status)
+	if status, _ := e.browser().register("not a name", map[string]any{"invite": invite}); status != 400 {
+		t.Errorf("malformed username = %d, want 400", status)
+	}
+	// A username is never an address, so none is reserved: "admin" gets as
+	// far as the invite check.
+	if status, _ := e.browser().register("admin", map[string]any{"invite": invite}); status != 403 {
+		t.Errorf("username admin with a used invite = %d, want 403", status)
 	}
 	if status, _ := sam.do("GET", "/api/v1/admin/users", nil); status != 403 {
 		t.Errorf("non-admin reading admin API = %d, want 403", status)
@@ -429,6 +434,11 @@ func TestEverything(t *testing.T) {
 	kaity.must(201, "POST", "/api/v1/aliases", map[string]any{"local": "shop", "domain_id": sharedID, "label": "Shopping"})
 	if status, _ := sam.do("POST", "/api/v1/aliases", map[string]any{"local": "shop", "domain_id": sharedID}); status != 409 {
 		t.Errorf("claiming a taken alias = %d, want 409", status)
+	}
+	for _, name := range []string{"admin", "info", "billing", "no-reply"} {
+		if status, _ := sam.do("POST", "/api/v1/aliases", map[string]any{"local": name, "domain_id": sharedID}); status != 400 {
+			t.Errorf("claiming the reserved address %s = %d, want 400", name, status)
+		}
 	}
 	if status, _ := sam.do("POST", "/api/v1/aliases", map[string]any{"local": "kaity", "domain_id": sharedID}); status != 409 {
 		t.Errorf("claiming an address another user holds = %d, want 409", status)
