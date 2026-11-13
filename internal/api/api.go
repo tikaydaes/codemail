@@ -117,7 +117,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+a+"/domains/{id}/check", s.session(s.handleCheckDomain))
 	mux.HandleFunc("DELETE "+a+"/domains/{id}", s.session(s.handleDeleteDomain))
 
-	mux.HandleFunc("GET "+a+"/sources", s.auth(s.handleSources))
+	// Linked mailboxes are account settings: browser sign-in only, even to
+	// list them, like domains, passkeys and devices.
+	mux.HandleFunc("GET "+a+"/sources", s.session(s.handleSources))
 	mux.HandleFunc("POST "+a+"/sources", s.limited(s.session(s.handleAddSource)))
 	mux.HandleFunc("PATCH "+a+"/sources/{id}", s.limited(s.session(s.handleUpdateSource)))
 	mux.HandleFunc("DELETE "+a+"/sources/{id}", s.session(s.handleDeleteSource))

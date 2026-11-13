@@ -84,7 +84,7 @@ through one carry the flag `forwarded` or `fetched`.
 
 | Method and path | Purpose |
 |---|---|
-| `GET /sources` | `sources`, `polling` (whether this server can poll) and `max`. A source has `id`, `address`, `kind`, `codes_only`, `host`, `username`, `last_checked`, `last_error`. The password is never returned. |
+| `GET /sources` *browser* | `sources`, `polling` (whether this server can poll) and `max`. A source has `id`, `address`, `kind`, `codes_only`, `host`, `username`, `last_checked`, `last_error`. The password is never returned. |
 | `POST /sources` *browser* | Body `address`, `kind`; for `forward` optionally `codes_only` (default true); for `imap` and `jmap` also `host`, `password` and optionally `username`. `host` is `name` or `name:port` for IMAP (993 is TLS, other ports use STARTTLS) and the JMAP session URL or server name for JMAP. The server signs in before saving and answers 400 with the reason if that fails. |
 | `PATCH /sources/{id}` *browser* | Body `codes_only` for a forwarding source; `host`, `username`, `password` for a polled one, which is signed in to again. |
 | `POST /sources/{id}/check` *browser* | Looks at a polled mailbox now and returns the source with the outcome. |

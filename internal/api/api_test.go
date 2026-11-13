@@ -555,6 +555,20 @@ func TestEverything(t *testing.T) {
 	}
 	app.bearer = tok3["access_token"].(string)
 	app.must(200, "GET", "/api/v1/me", nil)
+	// An app or extension reads codes; it does not manage the account.
+	// Domains, linked mailboxes, passkeys and devices need the web app.
+	for _, c := range [][2]string{
+		{"POST", "/api/v1/domains"}, {"DELETE", "/api/v1/domains/1"}, {"POST", "/api/v1/domains/1/check"},
+		{"GET", "/api/v1/sources"}, {"POST", "/api/v1/sources"}, {"PATCH", "/api/v1/sources/1"},
+		{"DELETE", "/api/v1/sources/1"}, {"POST", "/api/v1/sources/1/check"},
+		{"GET", "/api/v1/passkeys"}, {"DELETE", "/api/v1/passkeys/1"}, {"POST", "/api/v1/recovery-codes"},
+		{"PATCH", "/api/v1/me"}, {"DELETE", "/api/v1/me"}, {"DELETE", "/api/v1/devices/1"},
+		{"POST", "/api/v1/devices/pairing-code"}, {"GET", "/api/v1/admin/settings"},
+	} {
+		if status, _ := app.do(c[0], c[1], map[string]any{}); status != 403 {
+			t.Errorf("%s %s with an app token = %d, want 403", c[0], c[1], status)
+		}
+	}
 	if status, _ := e.token(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {"made-up"}}); status != 400 {
 		t.Errorf("renewing with an unknown refresh token = %d, want 400", status)
 	}
